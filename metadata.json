@@ -1,0 +1,6 @@
+{
+  "name": "ANBK SMK NEGERI 5 PULAU TALIABU",
+  "description": "Sistem Simulasi Ujian ANBK Berbasis Web dengan Keamanan Tinggi, Proteksi Fullscreen, Deteksi Tab-Switch, Blokir Copy-Paste, dan Evaluasi Kecurangan Berbasis AI.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
