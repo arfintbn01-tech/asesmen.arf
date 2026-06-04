@@ -299,7 +299,10 @@ function parseCleanJsonArray(text: string): any[] {
 }
 
 // Durable file-system JSON database for ANBK questions and state
-const DB_FILE = path.join(process.cwd(), "persistent_db.json");
+const isVercel = !!process.env.VERCEL;
+const DB_FILE = isVercel
+  ? path.join("/tmp", "persistent_db.json")
+  : path.join(process.cwd(), "persistent_db.json");
 
 function saveDatabase() {
   try {
@@ -789,7 +792,7 @@ async function startServer() {
 
   // Sync subjects and questions from client local storage
   app.post("/api/sync-database", (req, res) => {
-    const { subjects, questions } = req.body;
+    const { subjects, questions, token, startTime, endTime, clientStudents, clientViolationLogs } = req.body;
     let modified = false;
 
     // 1. Sync subjects list
@@ -827,6 +830,38 @@ async function startServer() {
       }
     }
 
+    // 3. Sync other exam configuration & status (especially for stateless Vercel environments)
+    if (token && typeof token === "string" && token !== "ANBK99" && examToken === "ANBK99") {
+      examToken = token;
+      modified = true;
+    }
+    if (startTime && typeof startTime === "string" && !examStartTime) {
+      examStartTime = startTime;
+      modified = true;
+    }
+    if (endTime && typeof endTime === "string" && !examEndTime) {
+      examEndTime = endTime;
+      modified = true;
+    }
+    if (clientStudents && typeof clientStudents === "object" && !Array.isArray(clientStudents)) {
+      // If client has more students than default static server, restore/merge
+      const serverSize = Object.keys(students).length;
+      const clientSize = Object.keys(clientStudents).length;
+      if (clientSize > serverSize) {
+        for (const [key, val] of Object.entries(clientStudents)) {
+          if (val && typeof val === "object") {
+            students[key] = val as Student;
+          }
+        }
+        modified = true;
+      }
+    }
+    if (Array.isArray(clientViolationLogs) && clientViolationLogs.length > violationLogs.length) {
+      violationLogs.length = 0;
+      violationLogs.push(...clientViolationLogs);
+      modified = true;
+    }
+
     if (modified) {
       saveDatabase();
     }
@@ -834,6 +869,11 @@ async function startServer() {
     res.json({
       success: true,
       subjects: Object.keys(defaultQuestions),
+      token: examToken,
+      examStartTime,
+      examEndTime,
+      students: Object.values(students),
+      violationLogs,
       questionsCount: Object.fromEntries(
         Object.entries(defaultQuestions).map(([k, v]) => [k, v.length])
       )

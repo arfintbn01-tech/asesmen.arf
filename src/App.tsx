@@ -715,11 +715,22 @@ export default function App() {
       const res = await fetch("/api/status");
       if (res.ok) {
         const data = await res.json();
-        setToken(data.token);
+        if (data.token) {
+          setToken(data.token);
+          if (data.token !== "ANBK99") {
+            localStorage.setItem("anbk_exam_token", data.token);
+          }
+        }
         setStudents(data.students);
         setViolationLogs(data.violationLogs);
-        if (data.examStartTime !== undefined) setExamStartTime(data.examStartTime);
-        if (data.examEndTime !== undefined) setExamEndTime(data.examEndTime);
+        if (data.examStartTime !== undefined && data.examStartTime !== "") {
+          setExamStartTime(data.examStartTime);
+          localStorage.setItem("anbk_exam_start_time", data.examStartTime);
+        }
+        if (data.examEndTime !== undefined && data.examEndTime !== "") {
+          setExamEndTime(data.examEndTime);
+          localStorage.setItem("anbk_exam_end_time", data.examEndTime);
+        }
 
         // Sync local currentSiswa if logged in
         if (currentSiswa) {
@@ -746,22 +757,104 @@ export default function App() {
 
   const syncLocalAndServerData = async () => {
     try {
-      // 1. Fetch entire database of questions and subjects from server as authoritative source of truth
+      // 1. Fetch entire database of questions and subjects from server
       const res = await fetch("/api/questions/all");
       if (res.ok) {
         const data = await res.json();
         const serverQuestions = data.defaultQuestions || {};
         const serverSubjects = Object.keys(serverQuestions);
 
-        // Update local storage cache to match the server exactly
-        localStorage.setItem("anbk_subjects_list", JSON.stringify(serverSubjects));
-        localStorage.setItem("anbk_questions_map", JSON.stringify(serverQuestions));
+        // 2. Load what is currently in localStorage
+        const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+        const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+        const localToken = localStorage.getItem("anbk_exam_token") || "ANBK99";
+        const localStartTime = localStorage.getItem("anbk_exam_start_time") || "";
+        const localEndTime = localStorage.getItem("anbk_exam_end_time") || "";
 
-        // Use server data directly for component state
-        setSubjectsList(serverSubjects);
+        const localSubjects: string[] = localSubjectsRaw ? JSON.parse(localSubjectsRaw) : [];
+        const localQuestions: Record<string, Question[]> = localQuestionsRaw ? JSON.parse(localQuestionsRaw) : {};
+
+        // 3. Bidirectional merge to prevent stateless loss (Vercel)
+        let needsUpdateServer = false;
+        let needsUpdateLocal = false;
+
+        // Merge subjects
+        const mergedSubjects = Array.from(new Set([...serverSubjects, ...localSubjects]));
+        if (mergedSubjects.length !== serverSubjects.length) {
+          needsUpdateServer = true;
+        }
+        if (mergedSubjects.length !== localSubjects.length) {
+          needsUpdateLocal = true;
+        }
+
+        // Merge questions map
+        const mergedQuestions: Record<string, Question[]> = {};
+        for (const sub of mergedSubjects) {
+          const sList = serverQuestions[sub] || [];
+          const lList = localQuestions[sub] || [];
+
+          // Merge by unique id
+          const qMap = new Map<string, Question>();
+          sList.forEach((q: Question) => qMap.set(q.id, q));
+          lList.forEach((q: Question) => qMap.set(q.id, q));
+
+          const mergedList = Array.from(qMap.values());
+          mergedQuestions[sub] = mergedList;
+
+          if (mergedList.length !== sList.length) {
+            needsUpdateServer = true;
+          }
+          if (mergedList.length !== lList.length) {
+            needsUpdateLocal = true;
+          }
+        }
+
+        // Check if proctor has saved token or exam times in local storage while server has defaults
+        if (localToken !== "ANBK99" && token === "ANBK99") {
+          needsUpdateServer = true;
+        }
+        if (localStartTime && !examStartTime) {
+          needsUpdateServer = true;
+        }
+        if (localEndTime && !examEndTime) {
+          needsUpdateServer = true;
+        }
+
+        // 4. Update local storage if needed
+        if (needsUpdateLocal) {
+          localStorage.setItem("anbk_subjects_list", JSON.stringify(mergedSubjects));
+          localStorage.setItem("anbk_questions_map", JSON.stringify(mergedQuestions));
+          setSubjectsList(mergedSubjects);
+        } else {
+          setSubjectsList(serverSubjects);
+        }
+
+        // 5. Update server if needed
+        if (needsUpdateServer) {
+          console.log("Menyinkronkan data buatan lokal Anda ke server...");
+          const syncRes = await fetch("/api/sync-database", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              subjects: mergedSubjects,
+              questions: mergedQuestions,
+              token: localToken,
+              startTime: localStartTime,
+              endTime: localEndTime
+            })
+          });
+          if (syncRes.ok) {
+            const syncData = await syncRes.json();
+            if (syncData.token) setToken(syncData.token);
+            if (syncData.examStartTime) setExamStartTime(syncData.examStartTime);
+            if (syncData.examEndTime) setExamEndTime(syncData.examEndTime);
+            if (syncData.students) setStudents(syncData.students);
+            if (syncData.violationLogs) setViolationLogs(syncData.violationLogs);
+          }
+        }
       }
     } catch (err) {
-      console.error("Gagal melakukan sinkronisasi data dari server:", err);
+      console.error("Gagal melakukan sinkronisasi data lokal:", err);
     }
   };
 
@@ -1093,6 +1186,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setToken(data.token);
+        localStorage.setItem("anbk_exam_token", data.token);
       }
     } catch (err) {
       console.error("Gagal men-generate token baru:", err);
@@ -1114,6 +1208,8 @@ export default function App() {
       });
       if (res.ok) {
         setTimeSaveSuccess(true);
+        localStorage.setItem("anbk_exam_start_time", inputStartTime);
+        localStorage.setItem("anbk_exam_end_time", inputEndTime);
         await refreshGlobalStatus();
         setTimeout(() => {
           setTimeSaveSuccess(false);
@@ -1178,6 +1274,9 @@ export default function App() {
     try {
       const res = await fetch("/api/reset", { method: "POST" });
       if (res.ok) {
+        localStorage.removeItem("anbk_exam_token");
+        localStorage.removeItem("anbk_exam_start_time");
+        localStorage.removeItem("anbk_exam_end_time");
         setCurrentSiswa(null);
         setIsExamStarted(false);
         setIsLockedBySystem(false);
