@@ -362,11 +362,12 @@ function loadDatabase() {
   }
 }
 
+export const app = express();
+
 async function startServer() {
   // Load the persistent state from file if exists
   loadDatabase();
 
-  const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: "50mb" }));
@@ -1345,9 +1346,14 @@ Format respons harus berupa JSON ARRAY dengan tepat ${targetCount} objek di dala
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server is currently listening on http://localhost:${PORT}`);
-  });
+  // Avoid listening on Port when imported under Vercel Serverless environment
+  if (process.env.VERCEL) {
+    console.log("Running in Vercel Serverless environment. Express app exported.");
+  } else {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server is currently listening on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
