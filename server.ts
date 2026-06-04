@@ -228,7 +228,22 @@ const defaultQuestions: Record<string, Question[]> = {
       questionText: "Jelaskan susunan perhitungan biaya jika seseorang ingin mengirimkan paket dengan berat 4,2 kilogram, dan berikan rincian biayanya!",
       points: 30
     }
-  ]
+  ],
+  "Informatika": [],
+  "Sejarah": [],
+  "Bahasa Inggris": [],
+  "Penjaskes": [],
+  "PIPAS": [],
+  "Seni Budaya": [],
+  "PKN": [],
+  "Agama Islam": [],
+  "Mulok": [],
+  "Dasar-Dasar Program Keahlian": [],
+  "Kewirausahaan": [],
+  "Konsentrasi Keahlian": [],
+  "Kebutuhan Dasar Manusia": [],
+  "Mapel Pilihan": [],
+  "Keterampilan Dasar Tindakan Keperawatan": []
 };
 
 // Lazy initialization logic for Gemini API

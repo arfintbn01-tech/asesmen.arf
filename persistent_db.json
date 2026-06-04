@@ -1,0 +1,312 @@
+{
+  "defaultQuestions": {
+    "Literasi Bahasa Indonesia": [
+      {
+        "id": "lit_1",
+        "type": "pilihan_ganda",
+        "stimulus": "Konsumsi plastik sekali pakai di Indonesia kian mengkhawatirkan. Setiap harinya, jutaan sedotan, kantong belanja, dan botol kemasan plastik berakhir di tempat pembuangan akhir hingga lautan. Berdasarkan data Kementerian Lingkungan Hidup, sampah plastik mendominasi 17% dari total timbunan sampah nasional. Beberapa kota telah berinisiatif mengeluarkan larangan penggunaan kantong plastik pada ritel modern, tetapi penegakan aturan di pasar tradisional masih sangat minim.",
+        "questionText": "Berdasarkan teks stimulus di atas, apa kendala utama penanggulangan sampah plastik di Indonesia saat ini?",
+        "options": [
+          "A. Ketiadaan data resmi dari Kementerian Lingkungan Hidup",
+          "B. Minimnya penegakan aturan larangan kantong plastik di pasar tradisional",
+          "C. Kurangnya minat masyarakat terhadap inovasi botol daur ulang",
+          "D. Tingginya harga alternatif bahan kantong belanja organik"
+        ],
+        "correctAnswer": "B. Minimnya penegakan aturan larangan kantong plastik di pasar tradisional",
+        "points": 20
+      },
+      {
+        "id": "lit_2",
+        "type": "pilihan_ganda_kompleks",
+        "stimulus": "Pemerintah berencana mengalihkan subsidi bahan bakar minyak (BBM) fosil ke arah pengembangan moda transportasi publik berbasis listrik serta pemberian subsidi langsung bagi masyarakat kurang mampu. Kebijakan ini menuai pro dan kontra. Sebagian pakar ekonomi mengapresiasi upaya menekan emisi karbon, sementara serikat buruh mengkhawatirkan kenaikan biaya logistik yang berimbas pada lonjakan harga bahan pokok mendasar.",
+        "questionText": "Manakah pernyataan berikut yang sesuai dengan isi teks pro dan kontra pengalihan subsidi BBM tersebut? (Pilih semua yang benar)",
+        "options": [
+          "A. Pengalihan subsidi BBM ditujukan salah satunya untuk transportasi publik listrik.",
+          "B. Kebijakan pengalihan subsidi didukung secara mutlak oleh seluruh serikat buruh tanpa syarat.",
+          "C. Para pakar ekonomi mengkhawatirkan peningkatan emisi karbon akibat kebijakan tersebut.",
+          "D. Serikat buruh mengkhawatirkan kenaikan harga bahan pokok akibat naiknya biaya logistik."
+        ],
+        "correctAnswer": [
+          "A. Pengalihan subsidi BBM ditujukan salah satunya untuk transportasi publik listrik.",
+          "D. Serikat buruh mengkhawatirkan kenaikan harga bahan pokok akibat naiknya biaya logistik."
+        ],
+        "points": 25
+      },
+      {
+        "id": "lit_3",
+        "type": "menjodohkan",
+        "stimulus": "Untuk memahami fenomena perubahan iklim global, kenalilah beberapa istilah kunci berikut: GRK (Gas Rumah Kaca) yang memerangkap panas matahari, Deforestasi yang mengurangi resapan karbon bumi, serta Energi Terbarukan sebagai solusi energi ramah lingkungan yang tidak memancarkan gas rumah kaca tinggi.",
+        "questionText": "Jodohkanlah istilah-istilah lingkungan berikut dengan deskripsi atau fungsinya yang sesuai berdasarkan informasi di atas!",
+        "matchingPairs": [
+          {
+            "left": "Gas Rumah Kaca (GRK)",
+            "right": [
+              "Memerangkap panas matahari di atmosfer",
+              "Mengurangi resapan emisi karbon bumi",
+              "Sumber energi ramah lingkungan bebas emisi"
+            ]
+          },
+          {
+            "left": "Deforestasi hutan",
+            "right": [
+              "Memerangkap panas matahari di atmosfer",
+              "Mengurangi resapan emisi karbon bumi",
+              "Sumber energi ramah lingkungan bebas emisi"
+            ]
+          },
+          {
+            "left": "Energi Terbarukan",
+            "right": [
+              "Memerangkap panas matahari di atmosfer",
+              "Mengurangi resapan emisi karbon bumi",
+              "Sumber energi ramah lingkungan bebas emisi"
+            ]
+          }
+        ],
+        "correctMatching": {
+          "Gas Rumah Kaca (GRK)": "Memerangkap panas matahari di atmosfer",
+          "Deforestasi hutan": "Mengurangi resapan emisi karbon bumi",
+          "Energi Terbarukan": "Sumber energi ramah lingkungan bebas emisi"
+        },
+        "points": 25
+      },
+      {
+        "id": "lit_4",
+        "type": "isian_singkat",
+        "stimulus": "Pada tahun 2045, Indonesia diprediksi akan mengalami bonus demografi di mana 70% penduduknya berada pada usia produktif (15-64 tahun). Periode ini dapat menjadi peluang emas (Indonesia Emas) atau bencana sosial jika kualitas pendidikan, lapangan kerja, dan layanan kesehatan tidak dipersiapkan sejak sekarang.",
+        "questionText": "Berapa persentase usia produktif penduduk Indonesia yang diprediksi akan mendominasi populasi pada puncak bonus demografi tahun 2045?",
+        "correctAnswer": "70%",
+        "points": 15
+      },
+      {
+        "id": "lit_5",
+        "type": "uraian",
+        "stimulus": "Perpustakaan sekolah digital kini mulai menggantikan eksistensi perpustakaan fisik. Kemudahan akses buku elektronik (e-book) lewat gawai dinilai lebih disukai generasi z. Akan tetapi, tidak sedikit siswa mengeluhkan kelelahan mata (digital eye strain) akibat paparan layar gawai yang terlalu lama, serta minimnya interaksi sosial yang biasanya terjadi di ruang baca fisik.",
+        "questionText": "Tuliskan pendapat analisis analitis Anda mengenai bagaimana sekolah sebaiknya menyeimbangkan peranan perpustakaan digital dan perpustakaan fisik agar minat baca serta kesehatan siswa dapat terjaga!",
+        "points": 15
+      }
+    ],
+    "Numerasi (Matematika)": [
+      {
+        "id": "num_1",
+        "type": "pilihan_ganda",
+        "stimulus": "Sebuah tangki air berkapasitas 1.200 liter dalam keadaan kosong. Tangki tersebut diisi menggunakan dua buah pipa air. Pipa A mengalirkan air dengan debit 15 liter per menit, sedangkan Pipa B mengalirkan air dengan debit 25 liter per menit.",
+        "questionText": "Jika kedua pipa tersebut dibuka secara bersamaan, berapa lama waktu yang dibutuhkan hingga tangki air terisi penuh?",
+        "options": [
+          "A. 20 menit",
+          "B. 30 menit",
+          "C. 40 menit",
+          "D. 48 menit"
+        ],
+        "correctAnswer": "B. 30 menit",
+        "points": 20
+      },
+      {
+        "id": "num_2",
+        "type": "pilihan_ganda_kompleks",
+        "stimulus": "Tabel berikut menunjukkan harga beli dan harga jual dua jenis buah di pasar:\n- Jeruk: Harga beli Rp 15.000/kg, Harga jual Rp 20.000/kg\n- Apel: Harga beli Rp 25.000/kg, Harga jual Rp 32.000/kg\n\nSeorang pedagang memiliki modal Rp 1.500.000 dan kapasitas kiosnya maksimum hanya dapat menampung 80 kg buah.",
+        "questionText": "Berdasarkan kondisi modal dan kapasitas kios tersebut, manakah kombinasi buah berikut yang dapat dibeli oleh pedagang tanpa melebihi modal atau kapasitas kios? (Pilih semua yang benar)",
+        "options": [
+          "A. Membeli 80 kg buah Jeruk saja.",
+          "B. Membeli 60 kg buah Apel saja.",
+          "C. Membeli 40 kg Jeruk dan 40 kg Apel.",
+          "D. Membeli 50 kg Jeruk dan 30 kg Apel."
+        ],
+        "correctAnswer": [
+          "A. Membeli 80 kg buah Jeruk saja.",
+          "D. Membeli 50 kg Jeruk dan 30 kg Apel."
+        ],
+        "points": 25
+      },
+      {
+        "id": "num_3",
+        "type": "isian_singkat",
+        "stimulus": "Rata-rata berat siswa kelas XII-A yang berjumlah 30 orang adalah 54 kg. Jika digabungkan dengan kelas XII-B yang berjumlah 20 orang, rata-rata berat keseluruhan menjadi 56 kg.",
+        "questionText": "Hitunglah nilai rata-rata berat badan siswa di kelas XII-B (tuliskan angka saja misalnya: 59)!",
+        "correctAnswer": "59",
+        "points": 25
+      },
+      {
+        "id": "num_4",
+        "type": "uraian",
+        "stimulus": "Perusahaan ekspedisi kilat menetapkan tarif pengiriman barang berdasarkan rumus fungsi biaya f(x) = 12.000 + 4.500(x - 1), dengan x menyatakan berat barang dalam kilogram (pembulatan ke atas terdekat) dan f(x) dalam rupiah. Aturan ini berlaku untuk x ≥ 1.",
+        "questionText": "Jelaskan susunan perhitungan biaya jika seseorang ingin mengirimkan paket dengan berat 4,2 kilogram, dan berikan rincian biayanya!",
+        "points": 30
+      }
+    ],
+    "Informatika": [],
+    "Bahasa Inggris": [],
+    "Penjaskes": [],
+    "PIPAS": [],
+    "Seni Budaya": [],
+    "PKN": [],
+    "Agama Islam": [],
+    "Mulok": [],
+    "Dasar-Dasar Program Keahlian": [],
+    "Kewirausahaan": [],
+    "Konsentrasi Keahlian": [],
+    "Kebutuhan Dasar Manusia": [],
+    "Mapel Pilihan": [],
+    "Keterampilan Dasar Tindakan Keperawatan": [],
+    "Sejarah": [
+      {
+        "id": "ai_1780572458794_0",
+        "type": "pilihan_ganda",
+        "stimulus": "Pada abad ke-19, Pemerintah Kolonial Hindia Belanda menerapkan sistem Tanam Paksa (Cultuurstelsel) di bawah Gubernur Jenderal Johannes van den Bosch. Sistem ini mewajibkan setiap desa menyisihkan sebagian tanahnya (sekitar 20%) untuk ditanami komoditas ekspor seperti kopi, tebu, dan nila. Namun dalam praktiknya, para pejabat lokal (bupati dan kepala desa) mengeksploitasi rakyat secara berlebihan demi mengejar cultuurprocenten (bonus persentase hasil panen). Akibatnya, terjadi kelaparan hebat di berbagai daerah, seperti di Cirebon (1843) dan Demak (1849), yang memaksa ribuan penduduk mengungsi demi bertahan hidup.",
+        "questionText": "Berdasarkan stimulus di atas, apa faktor utama yang menyebabkan penderitaan rakyat akibat Cultuurstelsel menyimpang jauh dari aturan formal yang ditetapkan pemerintah kolonial Belanda?",
+        "options": [
+          "A. Rendahnya minat pasar Eropa terhadap komoditas kopi dan tebu dari Nusantara.",
+          "B. Adanya sistem insentif cultuurprocenten yang memicu penyalahgunaan wewenang oleh pejabat lokal.",
+          "C. Kegagalan panen yang disebabkan oleh perubahan iklim ekstrem di wilayah Jawa Tengah.",
+          "D. Penolakan para petani lokal untuk menanam komoditas ekspor karena keterbatasan lahan."
+        ],
+        "correctAnswer": "B. Adanya sistem insentif cultuurprocenten yang memicu penyalahgunaan wewenang oleh pejabat lokal.",
+        "points": 30,
+        "kelas": "X Keperawatan"
+      },
+      {
+        "id": "ai_1780572458794_1",
+        "type": "pilihan_ganda_kompleks",
+        "stimulus": "Peristiwa Rengasdengklok merupakan salah satu momentum krusial menjelang Proklamasi Kemerdekaan Indonesia pada 17 Agustus 1945. Ketegangan terjadi antara golongan muda (seperti Sukarni, Wikana, dan Chaerul Saleh) dengan golongan tua (Soekarno dan Hatta) mengenai waktu pengumuman kemerdekaan setelah Jepang menyerah kepada Sekutu. Golongan muda menghendaki kemerdekaan diproklamasikan segera tanpa campur tangan PPKI (Panitia Persiapan Kemerdekaan Indonesia) yang mereka anggap sebagai badan bentukan Jepang. Sementara itu, golongan tua lebih memilih jalur diplomasi dan koordinasi terstruktur agar tidak memicu pertumpahan darah yang tidak perlu dengan sisa-sisa tentara Jepang.",
+        "questionText": "Manakah dari pernyataan berikut yang merupakan analisis benar mengenai latar belakang dan dampak dari Peristiwa Rengasdengklok berdasarkan stimulus tersebut? (Pilih semua yang benar)",
+        "options": [
+          "A. Perbedaan pandangan antara golongan muda dan tua berpusat pada legalitas lembaga PPKI dan asal-usul kemerdekaan Indonesia.",
+          "B. Golongan muda menculik Soekarno-Hatta untuk memaksa mereka bekerja sama kembali dengan militer Jepang.",
+          "C. Kekhawatiran golongan tua didasarkan pada potensi konflik fisik dengan pasukan Jepang yang masih memegang komando status quo.",
+          "D. Peristiwa Rengasdengklok membuktikan bahwa proklamasi kemerdekaan sepenuhnya dirancang dan difasilitasi oleh Sekutu."
+        ],
+        "correctAnswer": [
+          "A. Perbedaan pandangan antara golongan muda dan tua berpusat pada legalitas lembaga PPKI dan asal-usul kemerdekaan Indonesia.",
+          "C. Kekhawatiran golongan tua didasarkan pada potensi konflik fisik dengan pasukan Jepang yang masih memegang komando status quo."
+        ],
+        "points": 35,
+        "kelas": "X Keperawatan"
+      },
+      {
+        "id": "ai_1780572458794_2",
+        "type": "isian_singkat",
+        "stimulus": "Pada masa Depresi Besar (Malaise) tahun 1930-an, perekonomian Hindia Belanda mengalami pukulan telak akibat jatuhnya harga komoditas ekspor di pasar global. Ekspor gula, yang menjadi primadona industri di Jawa, merosot tajam dari 2,9 juta ton pada tahun 1928 menjadi hanya 1,4 juta ton pada tahun 1933. Penurunan produksi gula hingga lebih dari 50% ini menyebabkan penutupan puluhan pabrik gula dan PHK massal terhadap ratusan ribu buruh tani pribumi. Pemerintah kolonial terpaksa melakukan pemangkasan anggaran belanja pegawai secara drastis untuk menghindari kebangkrutan total.",
+        "questionText": "Berdasarkan data stimulus, berapakah perkiraan persentase penurunan (degradasi) produksi ekspor gula Hindia Belanda dari tahun 1928 ke tahun 1933? (Tuliskan jawaban dalam bentuk angka persentase dibulatkan tanpa desimal, contoh: 45% atau 52%)",
+        "correctAnswer": "52%",
+        "points": 35,
+        "kelas": "X Keperawatan"
+      },
+      {
+        "id": "ai_1780572458794_3",
+        "type": "pilihan_ganda",
+        "stimulus": "Perjuangan mempertahankan kemerdekaan Indonesia setelah 1945 dilakukan melalui jalur konfrontasi fisik dan jalur diplomasi internasional. Perjanjian Linggajati (1947) merupakan salah satu langkah diplomasi awal di mana Belanda secara de facto mengakui wilayah Republik Indonesia hanya meliputi Jawa, Sumatra, dan Madura. Keputusan ini menuai protes keras dari berbagai faksi politik di dalam negeri karena dianggap mempersempit wilayah kedaulatan Indonesia yang diproklamasikan pada 17 Agustus 1945. Namun, Sutan Sjahrir sebagai Perdana Menteri meyakini bahwa pengakuan de facto ini adalah batu pijakan penting untuk menarik simpati dan dukungan internasional secara bertahap di forum PBB.",
+        "questionText": "Mengapa Sutan Sjahrir dan pemerintah Indonesia tetap memilih untuk menandatangani Perjanjian Linggajati meskipun wilayah kedaulatan Indonesia menjadi sangat terbatas?",
+        "options": [
+          "A. Untuk memberikan waktu bagi militer Indonesia memperkuat persenjataan sebelum melakukan perang terbuka.",
+          "B. Sebagai strategi taktis guna memperoleh pengakuan internasional dan legitimasi politik di forum global.",
+          "C. Karena desakan dari pemerintah Amerika Serikat yang mengancam akan memboikot ekonomi Indonesia.",
+          "D. Adanya keyakinan bahwa Belanda akan menyerahkan seluruh sisa wilayah kekuasaannya tanpa syarat dalam waktu dekat."
+        ],
+        "correctAnswer": "B. Sebagai strategi taktis guna memperoleh pengakuan internasional dan legitimasi politik di forum global.",
+        "points": 30,
+        "kelas": "X Keperawatan"
+      },
+      {
+        "id": "ai_1780572458794_4",
+        "type": "pilihan_ganda_kompleks",
+        "stimulus": "Penemuan fosil Homo floresiensis di Liang Bua, Flores pada tahun 2003 sempat mengguncang dunia antropologi dan arkeologi global. Spesies manusia purba berukuran tubuh kerdil (sekitar 1 meter) ini diperkirakan hidup berdampingan dengan megafauna purba Flores seperti gajah purba kerdil (Stegodon) dan komodo raksasa. Beberapa teori ilmiah menyebutkan bahwa ukuran tubuh kerdil (insular dwarfism) merupakan bentuk adaptasi evolusioner terhadap keterbatasan sumber daya makanan di lingkungan pulau yang terisolasi. Penemuan ini mematahkan asumsi bahwa jalur migrasi manusia purba di wilayah Nusantara sepenuhnya linier dan homogen.",
+        "questionText": "Berdasarkan stimulus mengenai penemuan Homo floresiensis, manakah simpulan ilmiah yang valid dan didukung oleh fakta-fakta sejarah evolusi manusia purba tersebut? (Pilih semua yang benar)",
+        "options": [
+          "A. Fenomena insular dwarfism menjelaskan bahwa keterbatasan ruang dan pangan di pulau kecil dapat memicu penyusutan ukuran fisik spesies dalam jangka panjang.",
+          "B. Penemuan Homo floresiensis membuktikan bahwa manusia purba di Nusantara bermigrasi serentak menggunakan teknologi kapal modern.",
+          "C. Keberadaan manusia purba kerdil ini menunjukkan adanya variasi dan kompleksitas evolusi manusia purba yang tidak bersifat linier tunggal.",
+          "D. Homo floresiensis dipastikan punah karena tidak mampu berburu satwa liar seperti komodo dan Stegodon yang ukuran tubuhnya jauh lebih besar."
+        ],
+        "correctAnswer": [
+          "A. Fenomena insular dwarfism menjelaskan bahwa keterbatasan ruang dan pangan di pulau kecil dapat memicu penyusutan ukuran fisik spesies dalam jangka panjang.",
+          "C. Keberadaan manusia purba kerdil ini menunjukkan adanya variasi dan kompleksitas evolusi manusia purba yang tidak bersifat linier tunggal."
+        ],
+        "points": 35,
+        "kelas": "X Keperawatan"
+      }
+    ]
+  },
+  "students": {
+    "siswa1": {
+      "id": "siswa1",
+      "name": "Ardiansyah Pratama",
+      "nisn": "0082415123",
+      "status": "completed",
+      "kelas": "X Keperawatan",
+      "trustScore": 100,
+      "violationsCount": 0,
+      "violations": [],
+      "subject": "Sejarah",
+      "startTime": "2026-06-04T11:31:22.821Z",
+      "answers": {
+        "ai_1780572458794_0": "B. Adanya sistem insentif cultuurprocenten yang memicu penyalahgunaan wewenang oleh pejabat lokal.",
+        "ai_1780572458794_1": [
+          "A. Perbedaan pandangan antara golongan muda dan tua berpusat pada legalitas lembaga PPKI dan asal-usul kemerdekaan Indonesia.",
+          "B. Golongan muda menculik Soekarno-Hatta untuk memaksa mereka bekerja sama kembali dengan militer Jepang.",
+          "C. Kekhawatiran golongan tua didasarkan pada potensi konflik fisik dengan pasukan Jepang yang masih memegang komando status quo."
+        ],
+        "ai_1780572458794_2": "45%",
+        "ai_1780572458794_3": "B. Sebagai strategi taktis guna memperoleh pengakuan internasional dan legitimasi politik di forum global."
+      },
+      "aiReport": "**LAPORAN AUDIT INTEGRITAS AKADEMIK**\n**ASESMEN NASIONAL BERBASIS KOMPUTER (ANBK)**\n**Nomor Dokumen:** ANBK/AUDIT/2023/XI-0892  \n**Tanggal Evaluasi:** 24 Oktober 2023  \n**Auditor:** AI Proctoring Auditor System v4.2  \n\n---\n\n### **METADATA UJIAN**\n* **Nama Siswa:** Ardiansyah Pratama  \n* **Mata Pelajaran:** Sejarah  \n* **Sisa Nilai Integritas (Trust Score):** 100/100  \n* **Catatan Telemetri Sistem:** `[]` (Tidak ditemukan adanya aktivitas mencurigakan/pelanggaran)  \n\n---\n\n### **1. Analisis Kejujuran & Tingkat Kecurigaan**\n\nBerdasarkan analisis komprehensif terhadap data telemetri yang masuk selama durasi ujian, status siswa dinyatakan:\n\n**STATUS: AMAN (SANGAT PATUH)**\n\n**Justifikasi Pola Log & Waktu:**\n* **Skor Integritas Sempurna:** Siswa menyelesaikan ujian dengan *Trust Score* sebesar **100/100**. Nilai ini menunjukkan bahwa tidak ada satu pun parameter keamanan sistem yang terpicu.\n* **Ketiadaan Log Pelanggaran:** Log telemetri yang kosong (`[]`) mengonfirmasi secara mutlak bahwa selama pengerjaan soal Sejarah, siswa senantiasa berada dalam jendela ujian (active window) tanpa melakukan tindakan-tindakan yang melanggar protokol ANBK.\n\n---\n\n### **2. Evaluasi Tindak-Tanduk**\n\nSistem melakukan pemantauan ketat terhadap beberapa parameter kecurangan digital dan fisik. Berikut adalah rincian evaluasi perilaku siswa selama ujian:\n\n* **Navigasi Browser (Tab-Switching):** **TIDAK TERDETEKSI.** Siswa tidak pernah meninggalkan halaman ujian untuk mencari jawaban atau membuka mesin pencari.\n* **Deteksi Perangkat Tambahan (External Display/Kabel HDMI):** **TIDAK TERDETEKSI.** Tidak ada indikasi penggunaan monitor ganda atau proyeksi layar pihak ketiga.\n* **Metode Input Mencurigakan (Copy-Paste):** **TIDAK TERDETEKSI.** Siswa tidak melakukan aksi salin-tempel teks dari luar sistem ujian.\n* **Kehadiran Fisik & Fokus Visual (Webcam Monitoring):** **PATUH.** Kamera pengawas mencatat fokus visual siswa tetap konsisten menghadap layar ujian, tanpa adanya indikasi intervensi orang lain di sekitar area ujian.\n\n**Kesimpulan Motif:**  \nTidak ada pelanggaran yang dilakukan, baik yang bersifat sengaja maupun ketidaksengajaan teknis. Siswa menunjukkan kepatuhan total terhadap instruksi teknis ANBK.\n\n---\n\n### **3. Deskripsi Kredibilitas Nilai**\n\n* **Tingkat Kredibilitas:** **SANGAT TINGGI (100% Kredibel)**\n* **Penilaian Kritis:**  \nHasil ujian Sejarah yang diperoleh oleh **Ardiansyah Pratama** adalah representasi murni dari kemampuan akademisnya sendiri. Ketiadaan anomali pada log telemetri membuktikan bahwa ujian berlangsung dalam kondisi yang sangat terkendali dan steril dari bantuan luar (digital maupun non-digital). Oleh karena itu, **tidak diperlukan adanya pemeriksaan ulang (re-proctoring) atau wawancara klarifikasi.**\n\n---\n\n### **4. Saran Rekomendasi Guru (Saran Tindak Lanjut)**\n\nMerujuk pada hasil audit sistem yang sempurna, kami merekomendasikan langkah-langkah berikut kepada pihak sekolah dan guru pengampu:\n\n1. **Sahkan Nilai Ujian:** Nilai mata pelajaran Sejarah atas nama Ardiansyah Pratama dapat langsung disahkan dan dimasukkan ke dalam pangkalan data nilai rapor/ANBK nasional tanpa keraguan.\n2. **Berikan Apresiasi:** Sekolah disarankan memberikan apresiasi berupa umpan balik positif kepada siswa atas komitmennya dalam menjaga integritas akademik yang tinggi selama ANBK berlangsung.\n3. **Arsip Laporan:** Laporan ini dapat diarsipkan sebagai bukti kepatuhan standar operasional prosedur (SOP) pelaksanaan ANBK di sekolah.\n\n---\n*Laporan ini dibuat secara otomatis dan sah oleh Sistem Audit AI ANBK berdasarkan data telemetri real-time.*",
+      "submittedAt": "2026-06-04T11:32:30.984Z",
+      "score": 36,
+      "correctCount": 2,
+      "totalCount": 5
+    },
+    "siswa2": {
+      "id": "siswa2",
+      "name": "Aisyah Putri Rahayu",
+      "nisn": "0095123441",
+      "status": "idle",
+      "kelas": "X NKPI",
+      "trustScore": 100,
+      "violationsCount": 0,
+      "violations": []
+    },
+    "siswa3": {
+      "id": "siswa3",
+      "name": "Bagus Tri Laksono",
+      "nisn": "0083112211",
+      "status": "idle",
+      "kelas": "XI Keperawatan",
+      "trustScore": 100,
+      "violationsCount": 0,
+      "violations": []
+    },
+    "siswa4": {
+      "id": "siswa4",
+      "name": "Cantika Dwi Lestari",
+      "nisn": "0091223344",
+      "status": "idle",
+      "kelas": "XI NKPI",
+      "trustScore": 100,
+      "violationsCount": 0,
+      "violations": []
+    },
+    "siswa5": {
+      "id": "siswa5",
+      "name": "Dito Danuarta",
+      "nisn": "0071334455",
+      "status": "idle",
+      "kelas": "XII Keperawatan",
+      "trustScore": 100,
+      "violationsCount": 0,
+      "violations": []
+    },
+    "siswa6": {
+      "id": "siswa6",
+      "name": "Elina Salsabila",
+      "nisn": "0072445566",
+      "status": "idle",
+      "kelas": "XII NKPI",
+      "trustScore": 100,
+      "violationsCount": 0,
+      "violations": []
+    }
+  },
+  "violationLogs": [],
+  "examToken": "3Z4SC4",
+  "examStartTime": "",
+  "examEndTime": ""
+}
