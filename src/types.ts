@@ -16,6 +16,9 @@ export interface Student {
   answers?: Record<string, any>;
   aiReport?: string;
   submittedAt?: string;
+  score?: number;
+  correctCount?: number;
+  totalCount?: number;
 }
 
 export interface Question {

@@ -5,9 +5,17 @@ interface StudentLoginProps {
   examToken: string;
   onLoginSuccess: (studentData: any) => void;
   subjects?: string[];
+  examStartTime?: string;
+  examEndTime?: string;
 }
 
-export default function StudentLogin({ examToken, onLoginSuccess, subjects = ["Literasi Bahasa Indonesia", "Numerasi (Matematika)"] }: StudentLoginProps) {
+export default function StudentLogin({ 
+  examToken, 
+  onLoginSuccess, 
+  subjects = ["Literasi Bahasa Indonesia", "Numerasi (Matematika)"],
+  examStartTime = "",
+  examEndTime = ""
+}: StudentLoginProps) {
   const [name, setName] = useState("");
   const [nisn, setNisn] = useState("");
   const [kelas, setKelas] = useState("X Keperawatan");
@@ -119,6 +127,18 @@ export default function StudentLogin({ examToken, onLoginSuccess, subjects = ["L
             <h2 className="text-2xl font-bold text-slate-800">Form Login Siswa</h2>
             <p className="text-slate-500 text-sm mt-1">Harap isi form di bawah dengan teliti sesuai kartu ujian Anda.</p>
           </div>
+
+          {(examStartTime || examEndTime) && (
+            <div className="p-3.5 bg-indigo-50 border border-indigo-150 rounded-xl text-indigo-805 text-xs flex items-center gap-2.5 shadow-sm">
+              <span className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse"></span>
+              <div>
+                <span className="font-extrabold text-indigo-900 block">Jadwal Sesi Ujian Aktif</span>
+                <span className="text-indigo-700 font-medium">
+                  {examStartTime ? `${examStartTime} WIT` : "Mulai bebas"} s/d {examEndTime ? `${examEndTime} WIT` : "Selesai bebas"}
+                </span>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div id="login-error-alert" className="flex items-start gap-3 p-4 bg-red-50 border-l-4 border-red-500 rounded-xl text-red-700 text-sm animate-shake">

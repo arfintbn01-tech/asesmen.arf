@@ -28,23 +28,34 @@ import {
   Award,
   Plus,
   FileText,
-  Upload
+  Upload,
+  Save,
+  Download,
+  GraduationCap,
+  Edit2,
+  CheckCircle
 } from "lucide-react";
 import StudentLogin from "./components/StudentLogin";
 import { Student, Question, ViolationLog } from "./types";
+import * as XLSX from "xlsx";
 
 interface ActiveSubjectQuestionsPreviewProps {
   subject: string;
   refreshEvent: any;
+  onQuestionsChanged?: () => void;
 }
 
-function ActiveSubjectQuestionsPreview({ subject, refreshEvent }: ActiveSubjectQuestionsPreviewProps) {
+function ActiveSubjectQuestionsPreview({ subject, refreshEvent, onQuestionsChanged }: ActiveSubjectQuestionsPreviewProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedKelas, setSelectedKelas] = useState("Semua Kelas");
+  const [selectedKelas, setSelectedKelas] = useState("X Keperawatan");
+
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const [deletingQuestionId, setDeletingQuestionId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Question>>({});
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const classes = [
-    "Semua Kelas",
     "X Keperawatan",
     "X NKPI",
     "XI Keperawatan",
@@ -55,6 +66,7 @@ function ActiveSubjectQuestionsPreview({ subject, refreshEvent }: ActiveSubjectQ
 
   const loadQuestions = async () => {
     setLoading(true);
+    setErrorBanner(null);
     try {
       const res = await fetch(`/api/questions?subject=${encodeURIComponent(subject)}&kelas=${encodeURIComponent(selectedKelas)}`);
       if (res.ok) {
@@ -72,6 +84,79 @@ function ActiveSubjectQuestionsPreview({ subject, refreshEvent }: ActiveSubjectQ
     loadQuestions();
   }, [subject, selectedKelas, refreshEvent]);
 
+  const handleStartEdit = (q: Question) => {
+    setEditingQuestionId(q.id);
+    setEditForm({
+      ...q,
+      options: q.options ? [...q.options] : ["A. ", "B. ", "C. ", "D. "]
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingQuestionId(null);
+    setEditForm({});
+  };
+
+  const handleUpdateOption = (index: number, val: string) => {
+    const currentOptions = [...(editForm.options || [])];
+    currentOptions[index] = val;
+    setEditForm({ ...editForm, options: currentOptions });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editForm.questionText || !editForm.stimulus) {
+      setErrorBanner("Pertanyaan dan stimulus tidak boleh kosong.");
+      return;
+    }
+    
+    try {
+      const res = await fetch("/api/questions/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject,
+          question: editForm
+        })
+      });
+      if (res.ok) {
+        setEditingQuestionId(null);
+        setEditForm({});
+        loadQuestions();
+        onQuestionsChanged?.();
+      } else {
+        const errorData = await res.json();
+        setErrorBanner("Gagal memperbarui soal: " + errorData.error);
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorBanner("Gagal memperbarui soal karena gangguan koneksi.");
+    }
+  };
+
+  const handleDeleteQuestion = async (qId: string) => {
+    try {
+      const res = await fetch("/api/questions/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject,
+          id: qId
+        })
+      });
+      if (res.ok) {
+        setDeletingQuestionId(null);
+        loadQuestions();
+        onQuestionsChanged?.();
+      } else {
+        const errorData = await res.json();
+        setErrorBanner("Gagal menghapus soal: " + errorData.error);
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorBanner("Gagal menghapus soal karena gangguan koneksi.");
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="space-y-1">
@@ -86,6 +171,15 @@ function ActiveSubjectQuestionsPreview({ subject, refreshEvent }: ActiveSubjectQ
           ))}
         </select>
       </div>
+
+      {errorBanner && (
+        <div className="p-2.5 bg-red-950/80 border border-red-850/50 rounded-xl text-red-200 text-[11px] flex justify-between items-center text-left">
+          <span>{errorBanner}</span>
+          <button onClick={() => setErrorBanner(null)} className="text-red-400 hover:text-red-350 font-extrabold px-1.5 cursor-pointer text-sm">
+            &times;
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center p-8 space-x-2 text-xs font-semibold text-slate-450 z-10">
@@ -102,33 +196,284 @@ function ActiveSubjectQuestionsPreview({ subject, refreshEvent }: ActiveSubjectQ
           </p>
         </div>
       ) : (
-        <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
+        <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
           {questions.map((q, qIdx) => (
-            <div key={q.id || qIdx} className="p-3 bg-slate-800/80 border border-slate-700/40 rounded-xl space-y-1.5 text-xs text-left">
-              <div className="flex justify-between items-center text-[9px] font-black uppercase text-slate-400 tracking-wider">
-                <span>SOAL #{qIdx + 1} • {q.type.replace(/_/g, ' ')}</span>
-                <span className="text-amber-400 font-mono">+{q.points} Pts</span>
-              </div>
-              <p className="text-slate-200 font-extrabold leading-normal">{q.questionText}</p>
-              
-              <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-slate-400">
-                <span className="bg-slate-700 text-slate-300 border border-slate-600 px-1.5 py-0.5 rounded font-extrabold text-[9px] uppercase">
-                  {q.kelas || "Semua Kelas"}
-                </span>
-              </div>
+            <div key={q.id || qIdx}>
+              {editingQuestionId === q.id ? (
+                <div className="p-3.5 bg-slate-850 border-2 border-indigo-500 rounded-xl space-y-3.5 shadow-lg text-left">
+                  <div className="flex justify-between items-center text-[9px] font-black uppercase text-indigo-400">
+                    <span>EDIT SOAL #{qIdx + 1}</span>
+                    <span className="bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-900 text-indigo-300 font-mono font-bold">ID: {q.id}</span>
+                  </div>
+                  
+                  {/* Stimulus */}
+                  <div className="space-y-1">
+                    <label className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Stimulus Bacaan / Teks Cerita:</label>
+                    <textarea
+                      rows={3}
+                      value={editForm.stimulus || ""}
+                      onChange={(e) => setEditForm({...editForm, stimulus: e.target.value})}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                      placeholder="Uraian bacaan/cerita stimulus..."
+                    />
+                  </div>
 
-              {q.options && q.options.length > 0 && (
-                <div className="grid grid-cols-2 gap-1.5 text-[10px] text-slate-400 mt-1">
-                  {q.options.map((opt, oIdx) => (
-                    <div key={oIdx} className="truncate bg-slate-900/60 p-1 rounded-md border border-slate-700/50 font-semibold">
-                      {opt}
+                  {/* Question text */}
+                  <div className="space-y-1">
+                    <label className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Butir Pertanyaan:</label>
+                    <textarea
+                      rows={2}
+                      value={editForm.questionText || ""}
+                      onChange={(e) => setEditForm({...editForm, questionText: e.target.value})}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 text-xs font-bold focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                      placeholder="Masukkan pertanyaan utama..."
+                    />
+                  </div>
+
+                  {/* Type, Points, and Kelas */}
+                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                    <div className="space-y-1">
+                      <label className="block font-bold text-slate-400 uppercase tracking-widest">Tipe Pertanyaan:</label>
+                      <select
+                        value={editForm.type || "pilihan_ganda"}
+                        onChange={(e) => setEditForm({...editForm, type: e.target.value as any})}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-slate-350 focus:outline-none font-bold cursor-pointer"
+                      >
+                        <option value="pilihan_ganda">Pilihan Ganda</option>
+                        <option value="pilihan_ganda_kompleks">Pilihan Ganda Kompleks</option>
+                        <option value="isian_singkat">Isian Singkat</option>
+                        <option value="menjodohkan">Menjodohkan</option>
+                        <option value="uraian">Uraian / Essay</option>
+                      </select>
                     </div>
-                  ))}
+
+                    <div className="space-y-1">
+                      <label className="block font-bold text-slate-400 uppercase tracking-widest">Target Kelas/Rombel:</label>
+                      <select
+                        value={editForm.kelas || "X Keperawatan"}
+                        onChange={(e) => setEditForm({...editForm, kelas: e.target.value})}
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-lg p-1.5 text-slate-350 focus:outline-none font-bold cursor-pointer"
+                      >
+                        {classes.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest flex justify-between">
+                      <span>Bobot Nilai (Poin):</span>
+                      <span className="font-extrabold text-indigo-400">{editForm.points || 10} Poin</span>
+                    </label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="range"
+                        min={1}
+                        max={100}
+                        value={editForm.points || 10}
+                        onChange={(e) => setEditForm({...editForm, points: parseInt(e.target.value, 10) || 10})}
+                        className="flex-1 accent-indigo-500 cursor-pointer h-1 bg-slate-750 rounded-lg"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={editForm.points || 10}
+                        onChange={(e) => {
+                          let val = parseInt(e.target.value, 10) || 1;
+                          if (val < 1) val = 1;
+                          if (val > 100) val = 100;
+                          setEditForm({...editForm, points: val});
+                        }}
+                        className="w-16 bg-slate-900 border border-slate-700 rounded-lg p-1 text-center font-mono font-bold text-xs text-slate-200 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* MCQ Options editing */}
+                  {(editForm.type === "pilihan_ganda" || editForm.type === "pilihan_ganda_kompleks") && (
+                    <div className="space-y-2 border-t border-slate-800 pt-2 text-[10px]">
+                      <span className="block font-bold text-indigo-400 uppercase tracking-wider">Opsi Pilihan (A, B, C, D):</span>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {[0, 1, 2, 3].map((optIdx) => {
+                          const originalVal = editForm.options?.[optIdx] || "";
+                          const rawVal = originalVal.replace(/^[A-D]\.\s*/, '');
+                          return (
+                            <div key={optIdx} className="flex items-center space-x-1.5">
+                              <span className="font-mono font-bold text-slate-400">{String.fromCharCode(65 + optIdx)}.</span>
+                              <input
+                                type="text"
+                                value={rawVal}
+                                onChange={(e) => {
+                                  const cleanVal = e.target.value;
+                                  const formattedOpt = `${String.fromCharCode(65 + optIdx)}. ${cleanVal}`;
+                                  handleUpdateOption(optIdx, formattedOpt);
+                                }}
+                                placeholder={`Isi pilihan ${String.fromCharCode(65 + optIdx)}`}
+                                className="bg-slate-900 border border-slate-700 rounded-lg p-1 px-2 text-slate-200 text-xs font-semibold w-full focus:outline-none focus:ring-1 focus:ring-indigo-505"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Correct Answer editing */}
+                  {editForm.type !== "menjodohkan" && (
+                    <div className="space-y-1.5 border-t border-slate-805 pt-2 text-[10px]">
+                      <label className="block font-bold text-indigo-400 uppercase tracking-wider">Kunci Jawaban Tepat:</label>
+                      {editForm.type === "pilihan_ganda" ? (
+                        <select
+                          value={typeof editForm.correctAnswer === "string" ? editForm.correctAnswer : ""}
+                          onChange={(e) => setEditForm({...editForm, correctAnswer: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-slate-200 font-semibold cursor-pointer focus:outline-none"
+                        >
+                          <option value="">Pilih Opsi Kunci Jawaban</option>
+                          {editForm.options?.map((opt, oIdx) => (
+                            <option key={oIdx} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : editForm.type === "pilihan_ganda_kompleks" ? (
+                        <div className="space-y-1 bg-slate-900 p-2 border border-slate-700 rounded-lg">
+                          <span className="block text-[9px] text-slate-450 italic mb-1.5">Centang semua opsi yang benar:</span>
+                          {editForm.options?.map((opt, oIdx) => {
+                            const correctList = Array.isArray(editForm.correctAnswer) 
+                              ? editForm.correctAnswer 
+                              : typeof editForm.correctAnswer === "string" && editForm.correctAnswer 
+                                ? [editForm.correctAnswer] 
+                                : [];
+                            const isChecked = correctList.includes(opt);
+                            return (
+                              <label key={oIdx} className="flex items-center space-x-2 p-1 hover:bg-slate-800/50 rounded cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    let newList: string[];
+                                    if (isChecked) {
+                                      newList = correctList.filter(item => item !== opt);
+                                    } else {
+                                      newList = [...correctList, opt];
+                                    }
+                                    setEditForm({...editForm, correctAnswer: newList});
+                                  }}
+                                  className="rounded text-indigo-600 border-slate-700 cursor-pointer"
+                                />
+                                <span className="text-slate-350 font-semibold text-[10.5px]">{opt}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={Array.isArray(editForm.correctAnswer) ? editForm.correctAnswer.join(", ") : String(editForm.correctAnswer || "")}
+                          onChange={(e) => setEditForm({...editForm, correctAnswer: e.target.value})}
+                          placeholder="Ketik kunci jawaban eksak"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-slate-200 text-xs font-semibold focus:outline-none"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Save or Cancel */}
+                  <div className="flex space-x-2 pt-2">
+                    <button
+                      onClick={handleSaveEdit}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-2 px-3 rounded-lg flex items-center justify-center gap-1 cursor-pointer transition text-xs"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Simpan Perubahan</span>
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-extrabold py-2 px-3 rounded-lg border border-slate-700 cursor-pointer transition text-xs"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-800/80 border border-slate-700/40 rounded-xl space-y-1.5 text-xs text-left">
+                  <div className="flex justify-between items-center text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                    <span>SOAL #{qIdx + 1} • {q.type.replace(/_/g, ' ')}</span>
+                    <span className="text-amber-400 font-mono">+{q.points} Pts</span>
+                  </div>
+                  
+                  {/* Stimulus preview if exists and differs from question */}
+                  {q.stimulus && q.stimulus.trim() && (
+                    <p className="text-slate-400 text-[10px] leading-relaxed border-l-2 border-slate-600 pl-2 italic line-clamp-2">
+                      {q.stimulus}
+                    </p>
+                  )}
+
+                  <p className="text-slate-200 font-extrabold leading-normal">{q.questionText}</p>
+                  
+                  <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-slate-400">
+                    <span className="bg-slate-700 text-slate-300 border border-slate-600 px-1.5 py-0.5 rounded font-extrabold text-[9px] uppercase">
+                      {q.kelas || "Semua Kelas"}
+                    </span>
+                  </div>
+
+                  {q.options && q.options.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1.5 text-[10px] text-slate-400 mt-1">
+                      {q.options.map((opt, oIdx) => (
+                        <div key={oIdx} className="truncate bg-slate-900/60 p-1 rounded-md border border-slate-700/50 font-semibold" title={opt}>
+                          {opt}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                   <div className="pt-2 border-t border-slate-800/80 flex justify-between items-center text-[10px] text-slate-400 font-semibold">
+                    <span>Kunci: <strong className="text-slate-300 font-bold">{Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : String(q.correctAnswer)}</strong></span>
+                    
+                    {/* EDIT & DELETE ACTION BUTTONS */}
+                    <div className="flex items-center space-x-2">
+                      {deletingQuestionId === q.id ? (
+                        <div className="flex items-center gap-1.5 bg-red-950/80 border border-red-900/60 px-2 py-1 rounded-lg">
+                          <span className="text-[9px] text-red-200 font-bold">Yakin hapus?</span>
+                          <button
+                            onClick={() => handleDeleteQuestion(q.id)}
+                            className="bg-red-650 hover:bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded cursor-pointer transition"
+                            title="Konfirmasi Hapus"
+                          >
+                            Ya, Hapus
+                          </button>
+                          <button
+                            onClick={() => setDeletingQuestionId(null)}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[9px] font-black px-1.5 py-0.5 rounded border border-slate-700 cursor-pointer transition"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleStartEdit(q)}
+                            className="text-indigo-400 hover:text-indigo-300 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-950/45 border border-indigo-900/40 hover:border-indigo-800 transition cursor-pointer"
+                            title="Edit Soal ini"
+                          >
+                            <Edit2 className="w-2.5 h-2.5" />
+                            <span className="text-[9px]">Edit</span>
+                          </button>
+                          
+                          <button
+                            onClick={() => setDeletingQuestionId(q.id)}
+                            className="text-red-400 hover:text-red-300 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-950/45 border border-red-900/40 hover:border-red-800 transition cursor-pointer"
+                            title="Hapus Soal ini"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                            <span className="text-[9px]">Hapus</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
-              <div className="pt-1.5 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-405 font-semibold">
-                <span>Kunci: <strong className="text-slate-300 font-bold">{Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : String(q.correctAnswer)}</strong></span>
-              </div>
             </div>
           ))}
         </div>
@@ -145,6 +490,34 @@ export default function App() {
   const [token, setToken] = useState("ANBK99");
   const [students, setStudents] = useState<Student[]>([]);
   const [violationLogs, setViolationLogs] = useState<ViolationLog[]>([]);
+  const [examStartTime, setExamStartTime] = useState("");
+  const [examEndTime, setExamEndTime] = useState("");
+
+  // Editor states for exam times in Proctor module
+  const [inputStartTime, setInputStartTime] = useState("");
+  const [inputEndTime, setInputEndTime] = useState("");
+  const [isSavingTime, setIsSavingTime] = useState(false);
+  const [timeSaveSuccess, setTimeSaveSuccess] = useState(false);
+
+  // Sync editor inputs with polled states
+  useEffect(() => {
+    if (examStartTime) {
+      setInputStartTime(examStartTime);
+    }
+  }, [examStartTime]);
+
+  useEffect(() => {
+    if (examEndTime) {
+      setInputEndTime(examEndTime);
+    }
+  }, [examEndTime]);
+
+  // Grades Recapitulation and Filter States
+  const [gradesRecap, setGradesRecap] = useState<any[]>([]);
+  const [recapSubjectFilter, setRecapSubjectFilter] = useState<string>("Semua Mata Pelajaran");
+  const [recapClassFilter, setRecapClassFilter] = useState<string>("Semua Kelas");
+  const [recapSearchQuery, setRecapSearchQuery] = useState<string>("");
+  const [recapKkmThreshold, setRecapKkmThreshold] = useState<number>(75);
 
   // Current Student State
   const [currentSiswa, setCurrentSiswa] = useState<Student | null>(null);
@@ -186,7 +559,7 @@ export default function App() {
   ]);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [activeProctorTab, setActiveProctorTab] = useState<"ai" | "pdf" | "manual">("ai");
-  const [generatorTargetKelas, setGeneratorTargetKelas] = useState("Semua Kelas");
+  const [generatorTargetKelas, setGeneratorTargetKelas] = useState("X Keperawatan");
 
   // State variables for manual question additions
   const [manualStimulus, setManualStimulus] = useState("");
@@ -204,6 +577,7 @@ export default function App() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfGenMessage, setPdfGenMessage] = useState("");
+  const [aiQuestionCount, setAiQuestionCount] = useState<number>(3);
 
   // Classroom Filters
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>("Semua Kelas");
@@ -222,6 +596,13 @@ export default function App() {
   const [newStudentName, setNewStudentName] = useState("");
   const [newStudentNisn, setNewStudentNisn] = useState("");
   const [newStudentKelas, setNewStudentKelas] = useState("X Keperawatan");
+
+  // Student editing states
+  const [editingSiswaId, setEditingSiswaId] = useState<string | null>(null);
+  const [editSiswaName, setEditSiswaName] = useState("");
+  const [editSiswaNisn, setEditSiswaNisn] = useState("");
+  const [editSiswaKelas, setEditSiswaKelas] = useState("X Keperawatan");
+  const [deletingSiswaId, setDeletingSiswaId] = useState<string | null>(null);
 
   // Sound cues for alarms
   const playAlertSound = (frequency = 250, duration = 0.3) => {
@@ -245,6 +626,90 @@ export default function App() {
   };
 
   // Poll state from Server API
+  const refreshGradesRecap = async () => {
+    try {
+      const res = await fetch("/api/grades-recap");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setGradesRecap(data.recap || []);
+        }
+      }
+    } catch (err) {
+      console.error("Gagal memperbarui rekapan nilai:", err);
+    }
+  };
+
+  const handleExportCSV = (filteredRows: any[]) => {
+    const headers = ["No", "Nama Siswa", "NISN", "Kelas", "Mata Pelajaran", "Status Ujian", "Integritas (%)", "Pelanggaran", "Jawaban Benar", "Total Soal", "Nilai Hasil Ujian", "Status Ketuntasan"];
+    
+    const rows = filteredRows.map((row, index) => [
+      index + 1,
+      row.name,
+      row.nisn,
+      row.kelas || "-",
+      row.subject || "-",
+      row.status === "completed" ? "Selesai" : row.status === "in_exam" ? "Sedang Ujian" : row.status === "locked" ? "Terkunci" : "Idle",
+      row.trustScore,
+      row.violationsCount,
+      row.correctCount,
+      row.totalCount,
+      row.score,
+      row.status !== "completed" ? "Belum Selesai" : row.score >= recapKkmThreshold ? "Tuntas" : "Belum Tuntas"
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Rekap_Nilai_${recapSubjectFilter.replace(/\s+/g, '_')}_${recapClassFilter.replace(/\s+/g, '_')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportExcel = (filteredRows: any[]) => {
+    const formattedData = filteredRows.map((row, index) => ({
+      "No": index + 1,
+      "Nama Siswa": row.name,
+      "NISN": row.nisn,
+      "Kelas / Rombel": row.kelas || "-",
+      "Mata Pelajaran": row.subject || "-",
+      "Status Ujian": row.status === "completed" ? "Selesai" : row.status === "in_exam" ? "Sedang Ujian" : row.status === "locked" ? "Terkunci" : "Idle",
+      "Indeks Integritas (%)": row.trustScore,
+      "Jumlah Pelanggaran": row.violationsCount,
+      "Jawaban Benar": row.correctCount,
+      "Total Soal": row.totalCount,
+      "Nilai Akhir": row.score,
+      "Status Ketuntasan": row.status !== "completed" ? "Belum Selesai" : row.score >= recapKkmThreshold ? "Tuntas" : "Belum Tuntas"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(formattedData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Rekap Nilai");
+
+    // Auto-adjust column widths for better design polish
+    const maxLens = Object.keys(formattedData[0] || {}).map(key => {
+      let maxLen = key.length;
+      formattedData.forEach(row => {
+        const valStr = String((row as any)[key] || "");
+        if (valStr.length > maxLen) {
+          maxLen = valStr.length;
+        }
+      });
+      return { wch: maxLen + 3 };
+    });
+    worksheet["!cols"] = maxLens;
+
+    XLSX.writeFile(workbook, `Rekap_Nilai_Ujian_${recapSubjectFilter.replace(/\s+/g, '_')}_${recapClassFilter.replace(/\s+/g, '_')}.xlsx`);
+  };
+
   const refreshGlobalStatus = async () => {
     try {
       const res = await fetch("/api/status");
@@ -253,6 +718,8 @@ export default function App() {
         setToken(data.token);
         setStudents(data.students);
         setViolationLogs(data.violationLogs);
+        if (data.examStartTime !== undefined) setExamStartTime(data.examStartTime);
+        if (data.examEndTime !== undefined) setExamEndTime(data.examEndTime);
 
         // Sync local currentSiswa if logged in
         if (currentSiswa) {
@@ -267,32 +734,51 @@ export default function App() {
           }
         }
       }
+
+      // Refresh grades recap during global updates if proctor dashboard is active
+      if (activeRole === "pengawas") {
+        await refreshGradesRecap();
+      }
     } catch (err) {
       console.error("Gagal memperbarui status server:", err);
     }
   };
 
-  const refreshSubjectsList = async () => {
+  const syncLocalAndServerData = async () => {
     try {
-      const res = await fetch("/api/subjects");
+      // 1. Fetch entire database of questions and subjects from server as authoritative source of truth
+      const res = await fetch("/api/questions/all");
       if (res.ok) {
         const data = await res.json();
-        if (data.subjects && data.subjects.length > 0) {
-          setSubjectsList(data.subjects);
-        }
+        const serverQuestions = data.defaultQuestions || {};
+        const serverSubjects = Object.keys(serverQuestions);
+
+        // Update local storage cache to match the server exactly
+        localStorage.setItem("anbk_subjects_list", JSON.stringify(serverSubjects));
+        localStorage.setItem("anbk_questions_map", JSON.stringify(serverQuestions));
+
+        // Use server data directly for component state
+        setSubjectsList(serverSubjects);
       }
     } catch (err) {
-      console.error("Gagal memperbarui daftar mata pelajaran:", err);
+      console.error("Gagal melakukan sinkronisasi data dari server:", err);
     }
   };
 
-  // Initial load & Polling Interval setup
+   // Initial load & Polling Interval setup
   useEffect(() => {
     refreshGlobalStatus();
-    refreshSubjectsList();
+    syncLocalAndServerData();
     const interval = setInterval(refreshGlobalStatus, 3000);
     return () => clearInterval(interval);
-  }, [currentSiswa?.id, isLockedBySystem]);
+  }, [currentSiswa?.id, isLockedBySystem, activeRole]);
+
+  // Immediately refresh grades recap when switching to proctor dashboard
+  useEffect(() => {
+    if (activeRole === "pengawas") {
+      refreshGradesRecap();
+    }
+  }, [activeRole]);
 
   // Handle student login success
   const handleLoginSuccess = async (studentData: Student) => {
@@ -512,6 +998,21 @@ export default function App() {
   useEffect(() => {
     if (!currentSiswa || currentSiswa.status !== "in_exam" || !isExamStarted || isLockedBySystem) return;
 
+    if (examEndTime) {
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Jayapura",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      });
+      const currentHHMM = formatter.format(now);
+      if (currentHHMM > examEndTime) {
+        handleFinalSubmission();
+        return;
+      }
+    }
+
     if (timeLeft <= 0) {
       handleFinalSubmission();
       return;
@@ -522,7 +1023,7 @@ export default function App() {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [currentSiswa, isExamStarted, isLockedBySystem, timeLeft]);
+  }, [currentSiswa, isExamStarted, isLockedBySystem, timeLeft, examEndTime]);
 
   // Send a violation update to backend
   const reportViolation = async (type: string, description: string) => {
@@ -598,6 +1099,33 @@ export default function App() {
     }
   };
 
+  // Proctor Actions: Save configured exam operational hours limits
+  const handleSaveExamTimes = async () => {
+    setIsSavingTime(true);
+    setTimeSaveSuccess(false);
+    try {
+      const res = await fetch("/api/settings/exam-time", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startTime: inputStartTime,
+          endTime: inputEndTime
+        }),
+      });
+      if (res.ok) {
+        setTimeSaveSuccess(true);
+        await refreshGlobalStatus();
+        setTimeout(() => {
+          setTimeSaveSuccess(false);
+        }, 3000);
+      }
+    } catch (err) {
+      console.error("Gagal menyimpan jam operasional ujian:", err);
+    } finally {
+      setIsSavingTime(false);
+    }
+  };
+
   // Proctor Actions: Unlock a locked student
   const handleUnlockStudent = async (studentId: string) => {
     try {
@@ -670,13 +1198,17 @@ export default function App() {
       const res = await fetch("/api/generate-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: subjectToGenerate, kelas: generatorTargetKelas }),
+        body: JSON.stringify({ 
+          subject: subjectToGenerate, 
+          kelas: generatorTargetKelas,
+          count: aiQuestionCount 
+        }),
       });
 
       const data = await res.json();
       if (res.ok) {
         setAiGenMessage(`✅ Sukses! ${data.message}`);
-        // If current student is active on this subject, it will fetch new questions on portal refresh
+        await syncLocalAndServerData();
       } else {
         setAiGenMessage(`❌ Error: ${data.error}`);
       }
@@ -693,23 +1225,43 @@ export default function App() {
       alert("Nama mata pelajaran tidak boleh kosong!");
       return;
     }
+    const nameToAdd = newSubjectName.trim();
     try {
       const res = await fetch("/api/subjects/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newSubjectName }),
+        body: JSON.stringify({ name: nameToAdd }),
       });
       const data = await res.json();
       if (res.ok) {
         setSubjectsList(data.subjects);
-        setSubjectToGenerate(newSubjectName.trim());
+        setSubjectToGenerate(nameToAdd);
         setNewSubjectName("");
-        alert(`Mata pelajaran "${newSubjectName.trim()}" berhasil ditambahkan!`);
+        alert(`Mata pelajaran "${nameToAdd}" berhasil ditambahkan!`);
+        await syncLocalAndServerData();
       } else {
         alert(`Gagal menambahkan mata pelajaran: ${data.error}`);
       }
     } catch (err: any) {
       alert(`Gagal menghubungi server: ${err.message}`);
+    }
+  };
+
+  // Proctor Actions: Save database configuration permanently to JSON file
+  const handleSaveDatabase = async () => {
+    try {
+      const res = await fetch("/api/save-database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || "Seluruh data mata pelajaran, bank soal, dan status ujian berhasil disimpan permanen ke server!");
+      } else {
+        alert(`Gagal menyimpan database: ${data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Gagal menyimpan database: ${err.message}`);
     }
   };
 
@@ -745,6 +1297,71 @@ export default function App() {
     }
   };
 
+  const handleStartEditSiswa = (s: Student) => {
+    setEditingSiswaId(s.id);
+    setEditSiswaName(s.name);
+    setEditSiswaNisn(s.nisn);
+    setEditSiswaKelas(s.kelas || "X Keperawatan");
+  };
+
+  const handleCancelEditSiswa = () => {
+    setEditingSiswaId(null);
+    setEditSiswaName("");
+    setEditSiswaNisn("");
+    setEditSiswaKelas("X Keperawatan");
+  };
+
+  const handleSaveEditSiswa = async () => {
+    if (!editSiswaName.trim() || !editSiswaNisn.trim()) {
+      alert("Nama dan NISN tidak boleh kosong!");
+      return;
+    }
+    try {
+      const res = await fetch("/api/students/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingSiswaId,
+          name: editSiswaName.trim(),
+          nisn: editSiswaNisn.trim(),
+          kelas: editSiswaKelas
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Data siswa berhasil diperbarui!");
+        setEditingSiswaId(null);
+        setEditSiswaName("");
+        setEditSiswaNisn("");
+        refreshGlobalStatus();
+      } else {
+        alert(`Gagal memperbarui data siswa: ${data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Gagal memperbarui data siswa: ${err.message}`);
+    }
+  };
+
+  const handleDeleteSiswa = async (id: string) => {
+    try {
+      const res = await fetch("/api/students/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Siswa berhasil dihapus dari daftar!");
+        setDeletingSiswaId(null);
+        refreshGlobalStatus();
+      } else {
+        alert(`Gagal menghapus siswa: ${data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Gagal menghubungi server: ${err.message}`);
+    }
+  };
+
   // Proctor Actions: Generate questions using PDF attachments via Gemini
   const handlePDFQuestionGenerate = async () => {
     if (!pdfFile) {
@@ -768,13 +1385,15 @@ export default function App() {
               subject: subjectToGenerate,
               fileBase64: base64Content,
               mimeType: pdfFile.type || "application/pdf",
-              kelas: generatorTargetKelas
+              kelas: generatorTargetKelas,
+              count: aiQuestionCount
             }),
           });
           const data = await res.json();
           if (res.ok) {
             setPdfGenMessage(`✅ Sukses! ${data.message}`);
             setPdfFile(null);
+            await syncLocalAndServerData();
           } else {
             setPdfGenMessage(`❌ Gagal: ${data.error || "Gagal mengolah dokumen"}`);
           }
@@ -826,6 +1445,7 @@ export default function App() {
         setManualOptionC("");
         setManualOptionD("");
         setManualCorrect("");
+        await syncLocalAndServerData();
       } else {
         alert(`Gagal menyimpan: ${data.error}`);
       }
@@ -1053,7 +1673,13 @@ export default function App() {
           {!currentSiswa ? (
             /* Student Normal Entry/Login Screen */
             <div className="flex-1 flex items-center justify-center p-4">
-              <StudentLogin examToken={token} onLoginSuccess={handleLoginSuccess} subjects={subjectsList} />
+              <StudentLogin 
+                examToken={token} 
+                onLoginSuccess={handleLoginSuccess} 
+                subjects={subjectsList} 
+                examStartTime={examStartTime}
+                examEndTime={examEndTime}
+              />
             </div>
           ) : currentSiswa.status === "completed" ? (
             /* Exam Completed Succesfully Screen */
@@ -1072,6 +1698,50 @@ export default function App() {
                 <p className="text-slate-500 text-sm mb-6 leading-relaxed">
                   Terima kasih, <strong className="text-slate-700">{currentSiswa.name}</strong>. Lembar jawaban ANBK Anda untuk mata pelajaran <strong>{currentSiswa.subject}</strong> berhasil dikirim ke server pusat secara kredibel.
                 </p>
+
+                {/* Hasil Nilai Ujian Card */}
+                <div className="w-full bg-slate-50 p-6 rounded-2xl border border-slate-200/60 mb-5 text-left grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
+                  <div>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Nilai Hasil Ujian</span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-4xl font-black text-indigo-700 font-mono">
+                        {currentSiswa.score !== undefined ? currentSiswa.score : "-"}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-400">/ 100</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="text-xs text-slate-550 font-bold">KKM: {recapKkmThreshold}</span>
+                      <span className="text-slate-300">•</span>
+                      {currentSiswa.score !== undefined ? (
+                        currentSiswa.score >= recapKkmThreshold ? (
+                          <span className="px-2 py-0.5 text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-150 rounded animate-pulse" title={`Nilai ≥ KKM (${recapKkmThreshold})`}>
+                            TUNTAS
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-[9px] font-black uppercase text-rose-700 bg-rose-50 border border-rose-150 rounded" title={`Nilai < KKM (${recapKkmThreshold})`}>
+                            BELUM TUNTAS
+                          </span>
+                        )
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="border-t md:border-t-0 md:border-l border-slate-200 md:pl-4 pt-4 md:pt-0 flex flex-col justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1">Akurasi Jawaban</span>
+                      <p className="text-sm font-bold text-slate-750 font-mono mt-1">
+                        {currentSiswa.correctCount !== undefined && currentSiswa.totalCount !== undefined ? (
+                          <span>{currentSiswa.correctCount} benar <span className="text-slate-400 font-normal">dari</span> {currentSiswa.totalCount} soal</span>
+                        ) : (
+                          "-"
+                        )}
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-slate-400 italic leading-snug mt-2">
+                      Nilai dihitung otomatis secara objektif oleh sistem berdasarkan kunci jawaban ujian.
+                    </p>
+                  </div>
+                </div>
 
                 {/* Integritas Rating Card */}
                 <div className="w-full bg-slate-50 p-6 rounded-2xl border border-slate-200/60 mb-6 text-left">
@@ -1712,6 +2382,98 @@ export default function App() {
             </div>
           </div>
 
+          {/* CONFIGURATION BAR: EXAM WINDOW CONFIG (Pengaturan Jam Mulai & Akhir) */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 animate-fadeIn">
+            <div className="flex items-center gap-3.5">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100 shrink-0">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div className="text-left">
+                <h3 className="text-base font-black text-slate-800">Aturan Sesi Jam Mulai &amp; Selesai Ujian (WIT)</h3>
+                <p className="text-slate-500 text-xs mt-0.5 max-w-xl">
+                  Siswa hanya diijinkan login dan mengerjakan jika waktu sistem masuk rentang jam operasional (WIT) di bawah ini. Ujian aktif otomatis terkirim jika melewati jam selesai WIT.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
+              {/* Jam Mulai Input */}
+              <div className="flex flex-col gap-1 text-left min-w-[120px]">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Jam Mulai (WIT)</span>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={inputStartTime}
+                    onChange={(e) => setInputStartTime(e.target.value)}
+                    className="w-full pl-3 pr-10 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 focus:border-indigo-500 rounded-xl text-slate-800 font-bold font-mono text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 transition cursor-pointer"
+                  />
+                  {inputStartTime && (
+                    <button 
+                      onClick={() => setInputStartTime("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] bg-slate-200 hover:bg-red-50 hover:text-red-600 px-1 py-0.5 rounded font-black cursor-pointer text-slate-600 transition"
+                      title="Set bebas (tanpa jam mulai)"
+                    >
+                      Bebas
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Jam Akhir Input */}
+              <div className="flex flex-col gap-1 text-left min-w-[120px]">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Jam Selesai (WIT)</span>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={inputEndTime}
+                    onChange={(e) => setInputEndTime(e.target.value)}
+                    className="w-full pl-3 pr-10 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 focus:border-indigo-500 rounded-xl text-slate-800 font-bold font-mono text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 transition cursor-pointer"
+                  />
+                  {inputEndTime && (
+                    <button 
+                      onClick={() => setInputEndTime("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] bg-slate-200 hover:bg-red-50 hover:text-red-600 px-1 py-0.5 rounded font-black cursor-pointer text-slate-600 transition"
+                      title="Set bebas (tanpa jam selesai)"
+                    >
+                      Bebas
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex items-end self-end h-full pt-4 lg:pt-5">
+                <button
+                  id="save-exam-operational-times-btn"
+                  onClick={handleSaveExamTimes}
+                  disabled={isSavingTime}
+                  className={`py-2 px-5 font-bold rounded-xl text-xs flex items-center gap-2 transition cursor-pointer shadow-sm border ${
+                    timeSaveSuccess
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-250 font-black animate-pulse"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-700"
+                  }`}
+                >
+                  {isSavingTime ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : timeSaveSuccess ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-emerald-600 animate-bounce" />
+                      <span>Aturan Disimpan!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Simpan Aturan Waktu</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* MASTER BENTO GRID LAYOUT */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
             
@@ -1856,6 +2618,71 @@ export default function App() {
                       const currentConfig = statusConfig[student.status] || statusConfig.idle;
                       const isSelected = selectedAuditStudent?.id === student.id;
 
+                      if (editingSiswaId === student.id) {
+                        return (
+                          <div
+                            key={student.id}
+                            className="p-4 rounded-xl border border-blue-400 bg-blue-50/10 shadow-sm space-y-3.5 text-xs text-left"
+                          >
+                            <div className="font-extrabold text-blue-700 uppercase text-[10px] tracking-wider flex items-center justify-between">
+                              <span className="flex items-center gap-1">
+                                <Edit2 className="w-3 h-3 text-blue-600" />
+                                Edit Data Siswa
+                              </span>
+                              <span className="font-mono text-slate-400">ID: {student.id}</span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="space-y-1">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nama Lengkap:</label>
+                                <input
+                                  type="text"
+                                  value={editSiswaName}
+                                  onChange={(e) => setEditSiswaName(e.target.value)}
+                                  className="w-full text-xs p-2 bg-white border border-slate-250 rounded-xl text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">NISN (10 Digit):</label>
+                                <input
+                                  type="text"
+                                  value={editSiswaNisn}
+                                  onChange={(e) => setEditSiswaNisn(e.target.value)}
+                                  maxLength={10}
+                                  className="w-full text-xs p-2 bg-white border border-slate-250 rounded-xl text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Kelas / Rombel:</label>
+                                <select
+                                  value={editSiswaKelas}
+                                  onChange={(e) => setEditSiswaKelas(e.target.value)}
+                                  className="w-full text-xs p-2 bg-white border border-slate-250 rounded-xl text-slate-800 font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                                >
+                                  {availableClasses.filter(c => c !== "Semua Kelas").map((cls) => (
+                                    <option key={cls} value={cls}>{cls}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-150">
+                              <button
+                                onClick={handleCancelEditSiswa}
+                                className="py-1.5 px-3 bg-slate-200 hover:bg-slate-250 text-slate-650 font-bold rounded-lg cursor-pointer transition text-[11px]"
+                              >
+                                Batal
+                              </button>
+                              <button
+                                onClick={handleSaveEditSiswa}
+                                className="py-1.5 px-4 bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold rounded-lg cursor-pointer transition text-[11px] flex items-center gap-1 shadow-sm"
+                              >
+                                <Save className="w-3.5 h-3.5" />
+                                <span>Simpan</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       return (
                         <div
                           key={student.id}
@@ -1882,63 +2709,99 @@ export default function App() {
                               </div>
                             </div>
 
-                          {/* Action Button Controls Right */}
-                          <div className="flex items-center gap-2 self-start sm:self-auto uppercase">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] text-center tracking-wide font-extrabold whitespace-nowrap ${currentConfig.class}`}>
-                              {currentConfig.label}
-                            </span>
-                            
-                            <button
-                              onClick={() => setSelectedAuditStudent(student)}
-                              className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white rounded-lg text-[10px] font-extrabold tracking-wide transition cursor-pointer"
-                            >
-                              AUDIT LOGS
-                            </button>
-
-                            {student.status === "locked" ? (
+                            {/* Action Button Controls Right */}
+                            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto uppercase">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] text-center tracking-wide font-extrabold whitespace-nowrap ${currentConfig.class}`}>
+                                {currentConfig.label}
+                              </span>
+                              
                               <button
-                                onClick={() => handleUnlockStudent(student.id)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black cursor-pointer shadow-sm transition"
+                                onClick={() => setSelectedAuditStudent(student)}
+                                className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white rounded-lg text-[10px] font-extrabold tracking-wide transition cursor-pointer"
                               >
-                                BUKA AKSES
+                                AUDIT LOGS
                               </button>
-                            ) : (
-                              student.status === "in_exam" && (
+
+                              {/* Student Edit & Delete Actions */}
+                              {deletingSiswaId === student.id ? (
+                                <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 px-2 py-1 rounded-lg">
+                                  <span className="text-[9px] text-red-700 font-bold">Hapus?</span>
+                                  <button
+                                    onClick={() => handleDeleteSiswa(student.id)}
+                                    className="bg-red-600 hover:bg-red-700 text-white text-[9px] font-black px-1.5 py-0.5 rounded cursor-pointer transition shadow-sm"
+                                  >
+                                    Ya
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingSiswaId(null)}
+                                    className="bg-slate-200 hover:bg-slate-350 text-slate-700 text-[9px] font-bold px-1.5 py-0.5 rounded cursor-pointer border border-slate-300 transition"
+                                  >
+                                    Tidak
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => handleStartEditSiswa(student)}
+                                    className="p-1 px-1.5 text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 flex items-center justify-center cursor-pointer transition"
+                                    title="Edit Data Siswa"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingSiswaId(student.id)}
+                                    className="p-1 px-1.5 text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 rounded border border-red-200 flex items-center justify-center cursor-pointer transition"
+                                    title="Hapus Siswa ini"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+
+                              {student.status === "locked" ? (
                                 <button
-                                  onClick={() => handleLockStudentManual(student.id)}
-                                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-black cursor-pointer shadow-sm transition"
+                                  onClick={() => handleUnlockStudent(student.id)}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black cursor-pointer shadow-sm transition"
                                 >
-                                  KUNCI PAKSA
+                                  BUKA AKSES
                                 </button>
-                              )
-                            )}
+                              ) : (
+                                student.status === "in_exam" && (
+                                  <button
+                                    onClick={() => handleLockStudentManual(student.id)}
+                                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-black cursor-pointer shadow-sm transition"
+                                  >
+                                    KUNCI PAKSA
+                                  </button>
+                                )
+                              )}
+                            </div>
+
+                          </div>
+
+                          {/* Inline Student Trust Bar */}
+                          <div className="mt-3">
+                            <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
+                              <span>Sisa Skor Keamanan Kepatuhan Akademis</span>
+                              <span className="font-bold">{student.violationsCount} Pelanggaran</span>
+                            </div>
+                            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-300 ${
+                                  student.trustScore >= 80 ? "bg-emerald-500" :
+                                  student.trustScore >= 50 ? "bg-amber-500" : "bg-red-500"
+                                }`}
+                                style={{ width: `${student.trustScore}%` }}
+                              ></div>
+                            </div>
                           </div>
 
                         </div>
-
-                        {/* Inline Student Trust Bar */}
-                        <div className="mt-3">
-                          <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
-                            <span>Sisa Skor Keamanan Kepatuhan Akademis</span>
-                            <span className="font-bold">{student.violationsCount} Pelanggaran</span>
-                          </div>
-                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full transition-all duration-300 ${
-                                student.trustScore >= 80 ? "bg-emerald-500" :
-                                student.trustScore >= 50 ? "bg-amber-500" : "bg-red-500"
-                              }`}
-                              style={{ width: `${student.trustScore}%` }}
-                            ></div>
-                          </div>
-                        </div>
-
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* GRID PANEL 2: Real-time Live Infraction ticker log (col-span-5) */}
@@ -1983,6 +2846,369 @@ export default function App() {
 
           </div>
 
+          {/* FULL REKAPAN NILAI HASIL UJIAN BERDASARKAN MATAPELAJARAN DAN KELAS */}
+          <div id="grades-recap-dashboard" className="bg-white rounded-3xl border border-slate-200 p-5 md:p-6 shadow-sm space-y-6">
+            
+            {/* Header section with icon, title, search and export */}
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between border-b border-slate-100 pb-4 gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-indigo-50 text-indigo-750 rounded-lg">
+                    <GraduationCap className="w-5 h-5 text-indigo-600" />
+                  </span>
+                  <h3 className="text-lg font-black text-slate-850">
+                    Rekapan Nilai Hasil Ujian Siswa (AKM Nasional)
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Pantau, saring, dan analisis perolehan skor ujian ANBK berdasarkan mata pelajaran & kelas secara real-time.
+                </p>
+              </div>
+
+              {/* Advanced search & export button row */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Cari nama siswa / NISN..."
+                    value={recapSearchQuery}
+                    onChange={(e) => setRecapSearchQuery(e.target.value)}
+                    className="pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 w-52"
+                  />
+                  {recapSearchQuery && (
+                    <button
+                      onClick={() => setRecapSearchQuery("")}
+                      className="absolute right-2.5 top-2.5 text-xs text-slate-450 hover:text-slate-700 font-bold"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Subject filter */}
+                <select
+                  value={recapSubjectFilter}
+                  onChange={(e) => setRecapSubjectFilter(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm"
+                >
+                  <option value="Semua Mata Pelajaran">⚠️ Semua Mapel</option>
+                  {subjectsList.map((subName) => (
+                    <option key={subName} value={subName}>{subName}</option>
+                  ))}
+                </select>
+
+                {/* Class / Classroom filter */}
+                <select
+                  value={recapClassFilter}
+                  onChange={(e) => setRecapClassFilter(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm"
+                >
+                  {availableClasses.map((cls) => (
+                    <option key={cls} value={cls}>{cls === "Semua Kelas" ? "⚠️ Semua Kelas" : cls}</option>
+                  ))}
+                </select>
+
+                {/* KKM Threshold configuration */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 shadow-sm" title="Sesuaikan batas KKM Kelulusan/Ketuntasan">
+                  <span className="text-slate-450 font-black uppercase text-[9px] tracking-wider">KKM:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={recapKkmThreshold}
+                    onChange={(e) => {
+                      let val = parseInt(e.target.value, 10);
+                      if (isNaN(val)) val = 0;
+                      if (val > 100) val = 100;
+                      if (val < 0) val = 0;
+                      setRecapKkmThreshold(val);
+                    }}
+                    className="w-8 text-center font-black text-xs text-indigo-700 bg-transparent focus:outline-none border-b border-indigo-200 p-0"
+                  />
+                </div>
+
+                <button
+                  onClick={() => {
+                    const filtered = gradesRecap.filter((row) => {
+                      const matchSubject = recapSubjectFilter === "Semua Mata Pelajaran" || row.subject === recapSubjectFilter;
+                      const matchClass = recapClassFilter === "Semua Kelas" || row.kelas === recapClassFilter;
+                      const matchSearch = !recapSearchQuery || 
+                        row.name.toLowerCase().includes(recapSearchQuery.toLowerCase()) || 
+                        row.nisn.toLowerCase().includes(recapSearchQuery.toLowerCase());
+                      return matchSubject && matchClass && matchSearch;
+                    });
+                    handleExportExcel(filtered);
+                  }}
+                  disabled={gradesRecap.length === 0}
+                  className="flex items-center gap-1.5 py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white text-xs font-black rounded-xl transition cursor-pointer shadow-sm"
+                  title="Ekspor Rekapitulasi ke file Microsoft Excel (.xlsx)"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Ekspor Excel (.xlsx)</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const filtered = gradesRecap.filter((row) => {
+                      const matchSubject = recapSubjectFilter === "Semua Mata Pelajaran" || row.subject === recapSubjectFilter;
+                      const matchClass = recapClassFilter === "Semua Kelas" || row.kelas === recapClassFilter;
+                      const matchSearch = !recapSearchQuery || 
+                        row.name.toLowerCase().includes(recapSearchQuery.toLowerCase()) || 
+                        row.nisn.toLowerCase().includes(recapSearchQuery.toLowerCase());
+                      return matchSubject && matchClass && matchSearch;
+                    });
+                    handleExportCSV(filtered);
+                  }}
+                  disabled={gradesRecap.length === 0}
+                  className="flex items-center gap-1.5 py-2 px-3.5 bg-slate-600 hover:bg-slate-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white text-xs font-black rounded-xl transition cursor-pointer shadow-sm"
+                  title="Ekspor Rekapitulasi ke file Comma Separated Values (.csv)"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Ekspor CSV</span>
+                </button>
+              </div>
+            </div>
+
+            {/* LIVE KPI ANALYTICS WIDGETS */}
+            {(() => {
+              const matchedRows = gradesRecap.filter((row) => {
+                const matchSubject = recapSubjectFilter === "Semua Mata Pelajaran" || row.subject === recapSubjectFilter;
+                const matchClass = recapClassFilter === "Semua Kelas" || row.kelas === recapClassFilter;
+                return matchSubject && matchClass;
+              });
+
+              const completedOnes = matchedRows.filter(s => s.status === "completed");
+              const totalMatched = matchedRows.length;
+              const completedCount = completedOnes.length;
+              const totalScoreSum = completedOnes.reduce((sum, s) => sum + s.score, 0);
+              const averageScore = completedCount > 0 ? Math.round(totalScoreSum / completedCount) : 0;
+              const highestScore = completedCount > 0 ? Math.max(...completedOnes.map(s => s.score)) : 0;
+              const lowestScore = completedCount > 0 ? Math.min(...completedOnes.map(s => s.score)) : 0;
+              const passingCount = completedOnes.filter(s => s.score >= recapKkmThreshold).length;
+              const notPassingCount = completedCount - passingCount;
+              const passRate = completedCount > 0 ? Math.round((passingCount / completedCount) * 100) : 0;
+              
+              const totalTrust = matchedRows.reduce((sum, s) => sum + s.trustScore, 0);
+              const avgTrust = totalMatched > 0 ? Math.round(totalTrust / totalMatched) : 0;
+
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+                  <div className="bg-slate-50 border border-slate-150 p-3.5 rounded-2xl">
+                    <span className="text-[9px] font-black uppercase text-slate-400 block tracking-widest leading-none mb-1">Total Peserta</span>
+                    <span className="text-xl font-black text-slate-800 block font-mono">{totalMatched} Siswa</span>
+                    <span className="text-[9.5px] text-slate-450 block mt-1.5 font-medium leading-tight">
+                      Selesai: <strong>{completedCount}</strong> ({totalMatched > 0 ? Math.round(completedCount/totalMatched * 100) : 0}%)
+                    </span>
+                  </div>
+
+                  <div className="bg-amber-50/25 border border-amber-150 p-3.5 rounded-2xl">
+                    <span className="text-[9px] font-black uppercase text-amber-600 block tracking-widest leading-none mb-1">Rata-rata Nilai</span>
+                    <span className="text-xl font-black text-amber-700 block font-mono">{averageScore} / 100</span>
+                    <span className="text-[9.5px] text-amber-550/80 block mt-1.5 font-medium leading-tight">
+                      Dari {completedCount} siswa selesai
+                    </span>
+                  </div>
+
+                  <div className="bg-emerald-50/25 border border-emerald-150 p-3.5 rounded-2xl" title="Jumlah ketuntasan siswa berdasarkan nilai KKM">
+                    <span className="text-[9px] font-black uppercase text-emerald-600 block tracking-widest leading-none mb-1">Ketuntasan (KKM &ge; {recapKkmThreshold})</span>
+                    <span className="text-xl font-black text-emerald-700 block font-mono">{passRate}% Tuntas</span>
+                    <span className="text-[9.5px] text-emerald-550/80 block mt-1.5 font-extrabold leading-tight">
+                      <span className="text-emerald-700">✓ {passingCount} Tuntas</span> &nbsp;•&nbsp; <span className="text-rose-600">✗ {notPassingCount} Belum</span>
+                    </span>
+                  </div>
+
+                  <div className="bg-blue-50/25 border border-blue-150 p-3.5 rounded-2xl">
+                    <span className="text-[9px] font-black uppercase text-blue-600 block tracking-widest leading-none mb-1">Rentang Nilai</span>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-xl font-black text-blue-700 block font-mono">{highestScore}</span>
+                      <span className="text-[10px] text-slate-400 font-bold">Max</span>
+                      <span className="text-slate-400 mx-0.5">/</span>
+                      <span className="text-base font-extrabold text-blue-500 font-mono">{lowestScore}</span>
+                      <span className="text-[9px] text-slate-400 font-semibold">Min</span>
+                    </div>
+                    <span className="text-[9.5px] text-blue-550/80 block mt-1.5 font-semibold leading-tight">
+                      Rentang sebaran nilai
+                    </span>
+                  </div>
+
+                  <div className="bg-indigo-50/25 border border-indigo-150 p-3.5 rounded-2xl col-span-2 md:col-span-1">
+                    <span className="text-[9px] font-black uppercase text-indigo-600 block tracking-widest leading-none mb-1">Rerata Integritas</span>
+                    <span className="text-xl font-black text-indigo-700 block font-mono">{avgTrust}% Trust</span>
+                    <span className={`text-[10px] font-bold block mt-1.5 uppercase ${
+                      avgTrust >= 80 ? 'text-emerald-600' : avgTrust >= 50 ? 'text-amber-600' : 'text-red-600'
+                    }`}>
+                      {avgTrust >= 80 ? '🛡️ Sangat Jujur' : avgTrust >= 50 ? '⚠️ Waspada' : '🚨 Rawan Curang'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* DYNAMIC RESULTS LIST / TABLE CONTAINER */}
+            {(() => {
+              const matchedRows = gradesRecap.filter((row) => {
+                const matchSubject = recapSubjectFilter === "Semua Mata Pelajaran" || row.subject === recapSubjectFilter;
+                const matchClass = recapClassFilter === "Semua Kelas" || row.kelas === recapClassFilter;
+                const matchSearch = !recapSearchQuery || 
+                  row.name.toLowerCase().includes(recapSearchQuery.toLowerCase()) || 
+                  row.nisn.toLowerCase().includes(recapSearchQuery.toLowerCase());
+                return matchSubject && matchClass && matchSearch;
+              });
+
+              if (matchedRows.length === 0) {
+                return (
+                  <div className="text-center py-12 bg-slate-50 border border-dashed border-slate-200 rounded-3xl">
+                    <GraduationCap className="w-10 h-10 text-slate-300 mx-auto mb-2.5" />
+                    <p className="text-xs font-black text-slate-700">Tidak ada rekapan nilai yang cocok</p>
+                    <p className="text-[10px] text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
+                      Coba sesuaikan kombinasi saringan mata pelajaran, kelas atau kata kunci pencarian nama di sudut kanan.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="overflow-x-auto border border-slate-200/80 rounded-2xl">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider font-sans">
+                        <th className="py-3 px-4 text-center w-12">No.</th>
+                        <th className="py-3 px-4">Nama Siswa / NISN</th>
+                        <th className="py-3 px-3">Rombel / Kelas</th>
+                        <th className="py-3 px-3">Mata Pelajaran</th>
+                        <th className="py-3 px-3 text-center">Status Ujian</th>
+                        <th className="py-3 px-4">Indeks Integritas (AI)</th>
+                        <th className="py-3 px-3 text-center">Jawaban Benar</th>
+                        <th className="py-3 px-4 text-center font-bold">Nilai Akhir</th>
+                        <th className="py-3 px-4 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-155">
+                      {matchedRows.map((row, idx) => {
+                        const scoreColor = 
+                          row.status !== "completed" ? "text-slate-400 bg-slate-50 border border-slate-200" :
+                          row.score >= recapKkmThreshold ? "text-emerald-700 bg-emerald-50 border border-emerald-150 font-black" :
+                          "text-rose-700 bg-rose-50 border border-rose-150 font-black";
+
+                        const integrityColor = 
+                          row.trustScore >= 80 ? "text-emerald-600" :
+                          row.trustScore >= 50 ? "text-amber-600" : "text-red-500";
+
+                        return (
+                          <tr key={row.id} className="hover:bg-slate-50/50 transition duration-150">
+                            <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                            <td className="py-3.5 px-4">
+                              <span className="font-extrabold text-slate-800 text-[13px] block">{row.name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono tracking-wider">{row.nisn}</span>
+                            </td>
+                            <td className="py-3.5 px-3">
+                              <span className="bg-indigo-50 border border-indigo-100 text-indigo-900 font-extrabold px-2.5 py-1 rounded text-[10px] uppercase">
+                                {row.kelas || "Umum"}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-3 font-semibold text-slate-600">
+                              {row.subject || "-"}
+                            </td>
+                            <td className="py-3.5 px-3 text-center">
+                              {row.status === "completed" && (
+                                <span className="inline-flex items-center gap-1 py-1 px-2.5 bg-emerald-100 text-emerald-800 rounded-full font-black text-[9.5px]">
+                                  <Check className="w-3 h-3 text-emerald-700" /> Selesai
+                                </span>
+                              )}
+                              {row.status === "in_exam" && (
+                                <span className="inline-flex items-center gap-1 py-1 px-2.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full font-black text-[10px] animate-pulse">
+                                  ● Sedang Ujian
+                                </span>
+                              )}
+                              {row.status === "locked" && (
+                                <span className="inline-flex items-center gap-1 py-1 px-2.5 bg-red-100 text-red-800 border border-red-200 rounded-full font-bold text-[10px]">
+                                  🔒 Terkunci
+                                </span>
+                              )}
+                              {row.status === "idle" && (
+                                <span className="inline-flex items-center py-1 px-2.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-full font-semibold text-[10px]">
+                                  Idle / Belum Mulai
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center justify-between text-[11px] mb-1">
+                                <span className={`font-extrabold ${integrityColor}`}>{row.trustScore}%</span>
+                                <span className="text-[9.5px] text-slate-400 leading-none">{row.violationsCount} Pelanggaran</span>
+                              </div>
+                              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full ${
+                                    row.trustScore >= 80 ? 'bg-emerald-500' :
+                                    row.trustScore >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                                  }`} 
+                                  style={{ width: `${row.trustScore}%` }}
+                                ></div>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-3 text-center font-mono font-extrabold text-[12px] text-slate-705">
+                              {row.status === "completed" ? `${row.correctCount} / ${row.totalCount}` : "-"}
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              {row.status === "completed" ? (
+                                <div className="space-y-1">
+                                  <div className={`inline-block py-1 px-2.5 rounded-lg text-sm ${scoreColor}`}>
+                                    {row.score}
+                                  </div>
+                                  <div className="block">
+                                    {row.score >= recapKkmThreshold ? (
+                                      <span className="inline-flex items-center text-[8.5px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-150 rounded px-1.5 py-0.5" title={`Nilai ≥ KKM (${recapKkmThreshold})`}>
+                                        TUNTAS
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center text-[8.5px] font-black uppercase text-rose-700 bg-rose-50 border border-rose-150 rounded px-1.5 py-0.5" title={`Nilai < KKM (${recapKkmThreshold})`}>
+                                        BELUM TUNTAS
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : row.status === "in_exam" ? (
+                                <div className="py-1 px-2 text-[10px] text-amber-600 font-semibold italic bg-amber-50 rounded-lg inline-block">
+                                  Sedang Jalan
+                                </div>
+                              ) : (
+                                <span className="text-slate-350">—</span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              <button
+                                onClick={() => {
+                                  // Locate the original student object in memory to launch the proctor evaluation
+                                  const originalStudent = students.find(s => s.id === row.id);
+                                  if (originalStudent) {
+                                    setSelectedAuditStudent(originalStudent);
+                                    // Smoothly scroll down or wait for the modal to be visible
+                                    setTimeout(() => {
+                                      const modal = document.getElementById("audit-details-modal");
+                                      if (modal) {
+                                        modal.scrollIntoView({ behavior: "smooth" });
+                                      }
+                                    }, 100);
+                                  } else {
+                                    alert("Profil detail tidak ditemukan.");
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-slate-905 hover:bg-indigo-650 hover:text-white text-slate-800 border border-slate-300 rounded-lg text-[10px] font-black transition cursor-pointer whitespace-nowrap"
+                              >
+                                TELAUR REPORT
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+
+          </div>
+
           {/* GRID PANEL 3 & 4: (Twin Row Column Layout) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             
@@ -2010,6 +3236,14 @@ export default function App() {
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Tambah</span>
+                  </button>
+                  <button
+                    onClick={handleSaveDatabase}
+                    title="Simpan perubahan bank & mata pelajaran secara permanen ke server"
+                    className="p-1 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition whitespace-nowrap shadow-sm"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Simpan</span>
                   </button>
                 </div>
               </div>
@@ -2039,7 +3273,6 @@ export default function App() {
                       }}
                       className="w-full sm:w-44 pl-3 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-extrabold focus:outline-none focus:ring-2 focus:ring-indigo-500 block cursor-pointer shadow-sm"
                     >
-                      <option value="Semua Kelas">Semua Kelas</option>
                       <option value="X Keperawatan">X Keperawatan</option>
                       <option value="X NKPI">X NKPI</option>
                       <option value="XI Keperawatan">XI Keperawatan</option>
@@ -2086,12 +3319,35 @@ export default function App() {
               {activeProctorTab === "ai" && (
                 <div className="space-y-4 animate-fade-in text-xs">
                   <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                    Gunakan integrasi model <strong>Gemini 3.5 Flash</strong> untuk merancang 3 butir soal standar instrumen AKM secara instan berdasarkan kurikulum kognitif nasional Kemendikbud.
+                    Gunakan integrasi model <strong>Gemini 3.5 Flash</strong> untuk merancang instrumen AKM secara instan berdasarkan kurikulum kognitif nasional Kemendikbud.
                   </p>
 
-                  <div className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-[11px] text-indigo-950 font-semibold max-w-max">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
-                    <span>Mata Pelajaran: <strong className="font-extrabold">{subjectToGenerate}</strong> &nbsp;|&nbsp; Target Rombel: <span className="px-2 py-0.5 bg-indigo-600 text-white rounded font-extrabold text-[10px] uppercase">{generatorTargetKelas}</span></span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-[11px] text-indigo-950 font-semibold shadow-sm">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                      <span>Mata Pelajaran: <strong className="font-extrabold">{subjectToGenerate}</strong> &nbsp;|&nbsp; Target Rombel: <span className="px-2 py-0.5 bg-indigo-600 text-white rounded font-extrabold text-[10px] uppercase">{generatorTargetKelas}</span></span>
+                    </div>
+
+                    {/* Numeric Input Range 1-50 */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl shadow-sm">
+                      <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 leading-none">Jumlah Soal:</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={aiQuestionCount}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) {
+                            setAiQuestionCount(Math.min(50, Math.max(1, val)));
+                          } else {
+                            setAiQuestionCount(1);
+                          }
+                        }}
+                        className="w-14 px-1.5 py-0.5 bg-white border border-slate-250 rounded text-slate-800 text-xs font-black text-center focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                      <span className="text-[10px] font-bold text-slate-400">butir (1-50)</span>
+                    </div>
                   </div>
 
                   <button
@@ -2106,12 +3362,12 @@ export default function App() {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        <span>Menulis Instrumen AKM via Gemini...</span>
+                        <span>Menulis {aiQuestionCount} Instrumen AKM via Gemini...</span>
                       </>
                     ) : (
                       <>
                         <Brain className="w-4 h-4 text-amber-350" />
-                        <span>PRODUKSI 3 BUTIR SOAL DENGAN GEMINI AI</span>
+                        <span>PRODUKSI {aiQuestionCount} BUTIR SOAL DENGAN GEMINI AI</span>
                       </>
                     )}
                   </button>
@@ -2130,9 +3386,32 @@ export default function App() {
                     Unggah bahan ajar, rangkuman, modul atau berkas kisi-kisi pendukung dalam format <strong>PDF atau Dokumen</strong>. AI Gemini akan membaca dan memprioritaskan penyusunan stimulus berdasarkan file Anda.
                   </p>
 
-                  <div className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-[11px] text-indigo-950 font-semibold max-w-max">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
-                    <span>Mata Pelajaran: <strong className="font-extrabold">{subjectToGenerate}</strong> &nbsp;|&nbsp; Target Rombel: <span className="px-2 py-0.5 bg-indigo-600 text-white rounded font-extrabold text-[10px] uppercase">{generatorTargetKelas}</span></span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-[11px] text-indigo-950 font-semibold shadow-sm">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                      <span>Mata Pelajaran: <strong className="font-extrabold">{subjectToGenerate}</strong> &nbsp;|&nbsp; Target Rombel: <span className="px-2 py-0.5 bg-indigo-600 text-white rounded font-extrabold text-[10px] uppercase">{generatorTargetKelas}</span></span>
+                    </div>
+
+                    {/* Numeric Input Range 1-50 */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl shadow-sm">
+                      <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 leading-none">Jumlah Soal:</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={aiQuestionCount}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) {
+                            setAiQuestionCount(Math.min(50, Math.max(1, val)));
+                          } else {
+                            setAiQuestionCount(1);
+                          }
+                        }}
+                        className="w-14 px-1.5 py-0.5 bg-white border border-slate-250 rounded text-slate-800 text-xs font-black text-center focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                      <span className="text-[10px] font-bold text-slate-400">butir (1-50)</span>
+                    </div>
                   </div>
 
                   {/* Drag and Drop File Input Area */}
@@ -2186,12 +3465,12 @@ export default function App() {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
-                          <span>Mengekstrak Dokumen Belajar via Gemini...</span>
+                          <span>Mengekstrak {aiQuestionCount} Soal via Gemini...</span>
                         </>
                       ) : (
                         <>
                           <FileText className="w-4 h-4 text-amber-300" />
-                          <span>MULAI GENERATE SOAL DARI REFERENSI PDF</span>
+                          <span>MULAI GENERATE {aiQuestionCount} SOAL DARI REFERENSI PDF</span>
                         </>
                       )}
                     </button>
@@ -2257,14 +3536,33 @@ export default function App() {
                         </div>
 
                         <div className="space-y-1">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">BOBOT NILAI:</label>
-                          <input
-                            type="number"
-                            min={1}
-                            value={manualPoints}
-                            onChange={(e) => setManualPoints(Number(e.target.value))}
-                            className="w-full p-2 bg-white border border-slate-205 rounded-xl text-xs font-bold text-slate-800"
-                          />
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between">
+                            <span>BOBOT NILAI (1 - 100):</span>
+                            <span className="font-extrabold text-indigo-650">{manualPoints} Poin</span>
+                          </label>
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="range"
+                              min={1}
+                              max={100}
+                              value={manualPoints}
+                              onChange={(e) => setManualPoints(Number(e.target.value))}
+                              className="flex-1 accent-indigo-650 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={manualPoints}
+                              onChange={(e) => {
+                                let val = Number(e.target.value);
+                                if (val < 1) val = 1;
+                                if (val > 100) val = 100;
+                                setManualPoints(val);
+                              }}
+                              className="w-16 p-1.5 text-center bg-white border border-slate-205 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2409,7 +3707,7 @@ export default function App() {
                   Subjek Terpilih: {subjectToGenerate}
                 </span>
 
-                <ActiveSubjectQuestionsPreview subject={subjectToGenerate} refreshEvent={aiGenMessage || pdfGenMessage || manualQuestionsList.length === 0} />
+                <ActiveSubjectQuestionsPreview subject={subjectToGenerate} refreshEvent={aiGenMessage || pdfGenMessage || manualQuestionsList.length === 0} onQuestionsChanged={syncLocalAndServerData} />
               </div>
             </div>
 

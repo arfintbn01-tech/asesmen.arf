@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
@@ -25,6 +26,9 @@ interface Student {
   answers?: Record<string, any>;
   aiReport?: string;
   submittedAt?: string;
+  score?: number;
+  correctCount?: number;
+  totalCount?: number;
 }
 
 interface Question {
@@ -42,6 +46,8 @@ interface Question {
 
 // In-Memory Database State
 let examToken = "ANBK99";
+let examStartTime = "";
+let examEndTime = "";
 const students: Record<string, Student> = {
   "siswa1": {
     id: "siswa1",
@@ -292,7 +298,74 @@ function parseCleanJsonArray(text: string): any[] {
   }
 }
 
+// Durable file-system JSON database for ANBK questions and state
+const DB_FILE = path.join(process.cwd(), "persistent_db.json");
+
+function saveDatabase() {
+  try {
+    const dataToSave = {
+      defaultQuestions,
+      students,
+      violationLogs,
+      examToken,
+      examStartTime,
+      examEndTime
+    };
+    fs.writeFileSync(DB_FILE, JSON.stringify(dataToSave, null, 2), "utf8");
+    console.log("Database successfully committed to persistent_db.json!");
+  } catch (err) {
+    console.error("Critical error while saving database:", err);
+  }
+}
+
+function loadDatabase() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, "utf8");
+      const data = JSON.parse(raw);
+      
+      if (data.defaultQuestions) {
+        // Remove existing and update
+        for (const key of Object.keys(defaultQuestions)) {
+          delete defaultQuestions[key];
+        }
+        Object.assign(defaultQuestions, data.defaultQuestions);
+      }
+      
+      if (data.students) {
+        for (const key of Object.keys(students)) {
+          delete students[key];
+        }
+        Object.assign(students, data.students);
+      }
+      
+      if (data.violationLogs) {
+        violationLogs.length = 0;
+        violationLogs.push(...data.violationLogs);
+      }
+      
+      if (data.examToken) {
+        examToken = data.examToken;
+      }
+      if (data.examStartTime !== undefined) {
+        examStartTime = data.examStartTime;
+      }
+      if (data.examEndTime !== undefined) {
+        examEndTime = data.examEndTime;
+      }
+      console.log("Database successfully fully loaded from persistent_db.json!");
+    } else {
+      console.log("No persistent_db.json found. Utilizing static defaults.");
+    }
+  } catch (err) {
+    console.error("Error reading/parsing persistent_db.json:", err);
+  }
+}
+
 async function startServer() {
+  // Load the persistent state from file if exists
+  loadDatabase();
+
   const app = express();
   const PORT = 3000;
 
@@ -309,7 +382,22 @@ async function startServer() {
     res.json({
       token: examToken,
       students: Object.values(students),
-      violationLogs
+      violationLogs,
+      examStartTime,
+      examEndTime
+    });
+  });
+
+  // Proctor: Update exam start and end times
+  app.post("/api/settings/exam-time", (req, res) => {
+    const { startTime, endTime } = req.body;
+    examStartTime = startTime || "";
+    examEndTime = endTime || "";
+    saveDatabase();
+    res.json({
+      success: true,
+      examStartTime,
+      examEndTime
     });
   });
 
@@ -321,6 +409,7 @@ async function startServer() {
       tempToken += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     examToken = tempToken;
+    saveDatabase();
     res.json({ success: true, token: examToken });
   });
 
@@ -334,6 +423,28 @@ async function startServer() {
 
     if (token.toUpperCase() !== examToken.toUpperCase()) {
       return res.status(400).json({ error: "Token ujian salah atau tidak valid. Silakan hubungi pengawas ujian." });
+    }
+
+    // Check if within allowed exam schedule (using Waktu Indonesia Timur / WIT - Asia/Jayapura)
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Jayapura",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    });
+    const currentHHMM = formatter.format(now);
+
+    if (examStartTime) {
+      if (currentHHMM < examStartTime) {
+        return res.status(400).json({ error: `Sesi ujian belum dimulai. Jam mulai yang diatur pengawas: ${examStartTime} WIT (Waktu WIT saat ini: ${currentHHMM}).` });
+      }
+    }
+
+    if (examEndTime) {
+      if (currentHHMM > examEndTime) {
+        return res.status(400).json({ error: `Sesi ujian telah ditutup / berakhir. Jam selesai yang diatur pengawas: ${examEndTime} WIT (Waktu WIT saat ini: ${currentHHMM}).` });
+      }
     }
 
     // Try finding student by NISN or create dynamic one
@@ -372,6 +483,7 @@ async function startServer() {
     targetStudent.aiReport = undefined;
     targetStudent.submittedAt = undefined;
 
+    saveDatabase();
     res.json({
       success: true,
       student: targetStudent
@@ -394,6 +506,7 @@ async function startServer() {
       timestamp: new Date().toISOString()
     });
 
+    saveDatabase();
     res.json({ success: true, student: students[studentId] });
   });
 
@@ -410,6 +523,7 @@ async function startServer() {
       timestamp: new Date().toISOString()
     });
 
+    saveDatabase();
     res.json({ success: true, student: students[studentId] });
   });
 
@@ -461,6 +575,7 @@ async function startServer() {
     };
     violationLogs.unshift(globalLog);
 
+    saveDatabase();
     res.json({
       success: true,
       student: currentStudent,
@@ -491,6 +606,109 @@ async function startServer() {
     res.json({ subjects: Object.keys(defaultQuestions) });
   });
 
+  // Get evaluation grades/scores recap for all students
+  app.get("/api/grades-recap", (req, res) => {
+    const recap = Object.values(students).map(student => {
+      const subject = student.subject || "";
+      const studentKelas = student.kelas || "";
+      
+      let questions = defaultQuestions[subject] || [];
+      // Apply class filter if applicable
+      if (studentKelas && studentKelas !== "Semua Kelas") {
+        questions = questions.filter(q => !q.kelas || q.kelas === "Semua Kelas" || q.kelas === studentKelas);
+      }
+
+      let totalPoints = 0;
+      let earnedPoints = 0;
+      let correctCount = 0;
+      let totalCount = questions.length;
+
+      questions.forEach(q => {
+        const qPoints = q.points || 10;
+        totalPoints += qPoints;
+
+        const studentAns = student.answers ? student.answers[q.id] : undefined;
+        if (studentAns === undefined || studentAns === null) {
+          return;
+        }
+
+        let isCorrect = false;
+
+        if (q.type === "pilihan_ganda") {
+          if (typeof studentAns === "string" && typeof q.correctAnswer === "string") {
+            if (studentAns.trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) {
+              isCorrect = true;
+            }
+          }
+        } else if (q.type === "pilihan_ganda_kompleks") {
+          if (Array.isArray(studentAns) && Array.isArray(q.correctAnswer)) {
+            const sortedStudent = [...studentAns].map(s => s.trim().toLowerCase()).sort();
+            const sortedCorrect = [...q.correctAnswer].map(s => s.trim().toLowerCase()).sort();
+            if (JSON.stringify(sortedStudent) === JSON.stringify(sortedCorrect)) {
+              isCorrect = true;
+            }
+          } else if (Array.isArray(studentAns) && typeof q.correctAnswer === "string") {
+            if (studentAns.length === 1 && studentAns[0].trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) {
+              isCorrect = true;
+            }
+          }
+        } else if (q.type === "isian_singkat") {
+          if (typeof studentAns === "string" && q.correctAnswer) {
+            const correctAnswers = Array.isArray(q.correctAnswer)
+              ? q.correctAnswer.map(ans => ans.trim().toLowerCase())
+              : [String(q.correctAnswer).trim().toLowerCase()];
+            if (correctAnswers.includes(studentAns.trim().toLowerCase())) {
+              isCorrect = true;
+            }
+          }
+        } else if (q.type === "menjodohkan") {
+          if (typeof studentAns === "object" && studentAns !== null && q.correctMatching) {
+            let allCorrect = true;
+            const leftKeys = Object.keys(q.correctMatching);
+            if (leftKeys.length > 0) {
+              for (const key of leftKeys) {
+                if (String(studentAns[key] || "").trim().toLowerCase() !== String(q.correctMatching[key]).trim().toLowerCase()) {
+                  allCorrect = false;
+                  break;
+                }
+              }
+              if (allCorrect) isCorrect = true;
+            }
+          }
+        } else if (q.type === "uraian") {
+          // Essay counts as correct if it has at least 5 characters
+          if (typeof studentAns === "string" && studentAns.trim().length >= 5) {
+            isCorrect = true;
+          }
+        }
+
+        if (isCorrect) {
+          earnedPoints += qPoints;
+          correctCount++;
+        }
+      });
+
+      const finalScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
+
+      return {
+        id: student.id,
+        name: student.name,
+        nisn: student.nisn,
+        kelas: student.kelas,
+        subject: student.subject,
+        status: student.status,
+        trustScore: student.trustScore,
+        violationsCount: student.violationsCount,
+        submittedAt: student.submittedAt,
+        correctCount,
+        totalCount,
+        score: finalScore
+      };
+    });
+
+    res.json({ success: true, recap });
+  });
+
   // Proctor: Add a new student manually
   app.post("/api/students/add", (req, res) => {
     const { name, nisn, kelas, status } = req.body;
@@ -514,7 +732,111 @@ async function startServer() {
       violations: []
     };
     students[id] = newStudent;
+    saveDatabase();
     res.json({ success: true, student: newStudent, students: Object.values(students) });
+  });
+
+  // Proctor: Edit an existing student
+  app.post("/api/students/edit", (req, res) => {
+    const { id, name, nisn, kelas } = req.body;
+    if (!id || !students[id]) {
+      return res.status(404).json({ error: "Siswa tidak ditemukan" });
+    }
+    if (!name || !name.trim() || !nisn || !nisn.trim()) {
+      return res.status(400).json({ error: "Nama dan NISN wajib diisi" });
+    }
+    const trimmedNisn = nisn.trim();
+    const existing = Object.values(students).find(s => s.nisn === trimmedNisn && s.id !== id);
+    if (existing) {
+      return res.status(400).json({ error: "Siswa dengan NISN tersebut sudah digunakan oleh siswa lain" });
+    }
+
+    students[id].name = name.trim();
+    students[id].nisn = trimmedNisn;
+    students[id].kelas = kelas || students[id].kelas;
+
+    saveDatabase();
+    res.json({ success: true, student: students[id], students: Object.values(students) });
+  });
+
+  // Proctor: Delete an existing student
+  app.post("/api/students/delete", (req, res) => {
+    const { id } = req.body;
+    if (!id || !students[id]) {
+      return res.status(404).json({ error: "Siswa tidak ditemukan" });
+    }
+
+    delete students[id];
+    saveDatabase();
+    res.json({ success: true, id, students: Object.values(students) });
+  });
+
+  // Save entire database to persistent_db.json
+  app.post("/api/save-database", (req, res) => {
+    try {
+      saveDatabase();
+      res.json({ success: true, subjects: Object.keys(defaultQuestions), message: "Semua data mata pelajaran, bank soal, dan status ujian berhasil disimpan secara permanen!" });
+    } catch (err: any) {
+      res.status(500).json({ error: "Gagal menyimpan database permanently.", details: err.message });
+    }
+  });
+
+  // Get all default questions map
+  app.get("/api/questions/all", (req, res) => {
+    res.json({ defaultQuestions });
+  });
+
+  // Sync subjects and questions from client local storage
+  app.post("/api/sync-database", (req, res) => {
+    const { subjects, questions } = req.body;
+    let modified = false;
+
+    // 1. Sync subjects list
+    if (Array.isArray(subjects)) {
+      subjects.forEach((sub: any) => {
+        if (sub && typeof sub === "string") {
+          const trimmed = sub.trim();
+          if (trimmed && !defaultQuestions[trimmed]) {
+            defaultQuestions[trimmed] = [];
+            modified = true;
+          }
+        }
+      });
+    }
+
+    // 2. Sync questions map
+    if (questions && typeof questions === "object") {
+      for (const [sub, qList] of Object.entries(questions)) {
+        if (Array.isArray(qList)) {
+          if (!defaultQuestions[sub]) {
+            defaultQuestions[sub] = [];
+            modified = true;
+          }
+          const existingList = defaultQuestions[sub];
+          qList.forEach((q: any) => {
+            if (q && q.id) {
+              const exists = existingList.find(eq => eq.id === q.id);
+              if (!exists) {
+                existingList.push(q);
+                modified = true;
+              }
+            }
+          });
+        }
+      }
+    }
+
+    if (modified) {
+      saveDatabase();
+    }
+
+    res.json({
+      success: true,
+      subjects: Object.keys(defaultQuestions),
+      questionsCount: Object.fromEntries(
+        Object.entries(defaultQuestions).map(([k, v]) => [k, v.length])
+      )
+    });
   });
 
   // Add a new subject
@@ -528,6 +850,7 @@ async function startServer() {
       return res.status(400).json({ error: "Mata pelajaran tersebut sudah ada" });
     }
     defaultQuestions[trimmed] = [];
+    saveDatabase();
     res.json({ success: true, subjects: Object.keys(defaultQuestions) });
   });
 
@@ -556,15 +879,80 @@ async function startServer() {
     const otherClasses = existing.filter(q => (q.kelas || "Semua Kelas") !== targetKelas);
 
     defaultQuestions[subject] = [...otherClasses, ...formatted];
+    saveDatabase();
     res.json({ success: true, questions: formatted });
+  });
+
+  // Edit an existing question inside a subject bank
+  app.post("/api/questions/edit", (req, res) => {
+    const { subject, question } = req.body;
+    if (!subject || !question || !question.id) {
+      return res.status(400).json({ error: "Subjek dan data soal untuk diedit tidak valid." });
+    }
+
+    const existing = defaultQuestions[subject];
+    if (!existing) {
+      return res.status(404).json({ error: "Mata pelajaran tidak ditemukan atau kosong." });
+    }
+
+    const qIndex = existing.findIndex(q => q.id === question.id);
+    if (qIndex === -1) {
+      return res.status(404).json({ error: "Butir soal dengan ID tersebut tidak ditemukan." });
+    }
+
+    // Format updated question properly
+    const updatedQuestion: Question = {
+      id: question.id,
+      type: question.type || "pilihan_ganda",
+      stimulus: question.stimulus || "",
+      questionText: question.questionText || "",
+      options: Array.isArray(question.options) ? question.options : [],
+      matchingPairs: Array.isArray(question.matchingPairs) ? question.matchingPairs : undefined,
+      correctMatching: question.correctMatching || undefined,
+      correctAnswer: question.correctAnswer || "",
+      points: Number(question.points) || 10,
+      kelas: question.kelas || "Semua Kelas"
+    };
+
+    existing[qIndex] = updatedQuestion;
+    saveDatabase();
+    res.json({ success: true, question: updatedQuestion });
+  });
+
+  // Delete an existing question inside a subject bank
+  app.post("/api/questions/delete", (req, res) => {
+    const { subject, id } = req.body;
+    if (!subject || !id) {
+      return res.status(400).json({ error: "Parameter mata pelajaran dan ID soal diperlukan." });
+    }
+
+    const existing = defaultQuestions[subject];
+    if (!existing) {
+      return res.status(404).json({ error: "Mata pelajaran tidak ditemukan." });
+    }
+
+    const qIndex = existing.findIndex(q => q.id === id);
+    if (qIndex === -1) {
+      return res.status(404).json({ error: "Butir soal tidak ditemukan di bank soal." });
+    }
+
+    // Remove the item
+    defaultQuestions[subject] = existing.filter(q => q.id !== id);
+    saveDatabase();
+    res.json({ success: true, message: "Butir soal berhasil dihapus." });
   });
 
   // Generate questions from document/PDF base64 and extract using Gemini
   app.post("/api/generate-from-pdf", async (req, res) => {
-    const { subject, fileBase64, mimeType, kelas } = req.body;
+    const { subject, fileBase64, mimeType, kelas, count } = req.body;
     if (!subject || !fileBase64) {
       return res.status(400).json({ error: "Mata pelajaran dan file dokumen diperlukan." });
     }
+
+    let targetCount = parseInt(count, 10) || 3;
+    if (targetCount < 1) targetCount = 1;
+    if (targetCount > 50) targetCount = 50;
+
     try {
       const gemini = getGeminiClient();
       const documentPart = {
@@ -576,18 +964,18 @@ async function startServer() {
       
       const prompt = `Anda adalah penyusun materi instrumen ujian nasional ANBK (Asesmen Nasional Berbasis Komputer) Kemendikbud-Ristek.
 Berikut adalah file materi referensi dokumen/PDF yang diunggah oleh pengawas.
-Tolong buatkan 3 butir soal berkualitas tinggi berdasarkan isi materi dokumen terlampir untuk mata pelajaran: "${subject}".
+Tolong buatkan TEPAT ${targetCount} butir soal berkualitas tinggi berdasarkan isi materi dokumen terlampir untuk mata pelajaran: "${subject}".
 Tiap soal harus mengukur tingkat literasi mendalam atau numerasi analitis yang relevan dengan isi dokumen tersebut.
 
 Persyaratan format:
+- Jumlah total soal yang dihasilkan HARUS TEPAT ${targetCount} butir.
 - Setiap soal harus menyertakan **STIMULUS**. Sediakan kutipan atau ringkasan stimulus cerita/data dari dokumen terlampir (minimal 3 kalimat).
-- Soal HARUS bertipe sebagai berikut:
-  1. Soal 1: tipe "pilihan_ganda" (MCQ dengan 4 opsi A, B, C, D).
-  2. Soal 2: tipe "pilihan_ganda_kompleks" (Checkboxes di mana siswa bisa memilih lebih dari satu jawaban benar. Sediakan 4 opsi, dan correctAnswer berupa array berisi teks opsi yang benar).
-  3. Soal 3: tipe "isian_singkat" (Isian kata pendek yang ringkas, sertakan correctAnswer berupa string jawaban ringkasnya).
+- Variasikan tipe soal secara berkala/seimbang di antara tiga tipe berikut:
+  1. "pilihan_ganda" (MCQ dengan 4 opsi A, B, C, D dan satu string correctAnswer berupa teks opsi lengkap yang dipilih, misal "A. ...").
+  2. "pilihan_ganda_kompleks" (Siswa dapat memilih lebih dari satu jawaban benar. Sediakan 4 opsi, dan correctAnswer berupa array berisi teks opsi-opsi yang benar, misal ["A. ...", "C. ..."]).
+  3. "isian_singkat" (Isian kata pendek yang ringkas, sertakan correctAnswer berupa string jawaban ringkasnya).
 
-Format respons harus berupa JSON ARRAY dengan properti persis seperti berikut (jangan sertakan teks pengantar apa-apa di luar JSON, langsung cetak array raw JSON):
-\`\`\`json
+Format respons harus berupa JSON ARRAY dengan tepat ${targetCount} objek di dalamnya. Setiap objek harus memiliki properti persis seperti berikut (jangan sertakan teks pengantar apa-apa di luar JSON, langsung cetak array raw JSON):
 [
   {
     "id": "gen_pdf_1",
@@ -615,8 +1003,7 @@ Format respons harus berupa JSON ARRAY dengan properti persis seperti berikut (j
     "correctAnswer": "jawaban tepat",
     "points": 35
   }
-]
-\`\`\``;
+]`;
 
       const response = await gemini.models.generateContent({
         model: "gemini-3.5-flash",
@@ -648,10 +1035,11 @@ Format respons harus berupa JSON ARRAY dengan properti persis seperti berikut (j
         const otherClasses = existing.filter(q => (q.kelas || "Semua Kelas") !== targetKelas);
 
         defaultQuestions[subject] = [...otherClasses, ...formatted];
+        saveDatabase();
         return res.json({
           success: true,
           questions: formatted,
-          message: `Berhasil mengekstrak materi dan membuat 3 soal baru dari AI Gemini berdasarkan dokumen PDF untuk mata pelajaran: ${subject}.`
+          message: `Berhasil mengekstrak materi dan membuat ${formatted.length} soal baru dari AI Gemini berdasarkan dokumen PDF untuk mata pelajaran: ${subject}.`
         });
       } else {
         throw new Error("Format JSON respons tidak valid atau kosong.");
@@ -676,6 +1064,89 @@ Format respons harus berupa JSON ARRAY dengan properti persis seperti berikut (j
     currentStudent.status = "completed";
     currentStudent.answers = answers;
     currentStudent.submittedAt = new Date().toISOString();
+
+    // Calculate score, correctCount, totalCount
+    const studentSubject = currentStudent.subject || "";
+    const studentKelas = currentStudent.kelas || "";
+    
+    let subjectQuestions = defaultQuestions[studentSubject] || [];
+    if (studentKelas && studentKelas !== "Semua Kelas") {
+      subjectQuestions = subjectQuestions.filter(q => !q.kelas || q.kelas === "Semua Kelas" || q.kelas === studentKelas);
+    }
+
+    let totalPoints = 0;
+    let earnedPoints = 0;
+    let correctCount = 0;
+    let totalCount = subjectQuestions.length;
+
+    subjectQuestions.forEach(q => {
+      const qPoints = q.points || 10;
+      totalPoints += qPoints;
+
+      const studentAns = answers ? answers[q.id] : undefined;
+      if (studentAns === undefined || studentAns === null) {
+        return;
+      }
+
+      let isCorrect = false;
+
+      if (q.type === "pilihan_ganda") {
+        if (typeof studentAns === "string" && typeof q.correctAnswer === "string") {
+          if (studentAns.trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) {
+            isCorrect = true;
+          }
+        }
+      } else if (q.type === "pilihan_ganda_kompleks") {
+        if (Array.isArray(studentAns) && Array.isArray(q.correctAnswer)) {
+          const sortedStudent = [...studentAns].map(s => s.trim().toLowerCase()).sort();
+          const sortedCorrect = [...q.correctAnswer].map(s => s.trim().toLowerCase()).sort();
+          if (JSON.stringify(sortedStudent) === JSON.stringify(sortedCorrect)) {
+            isCorrect = true;
+          }
+        } else if (Array.isArray(studentAns) && typeof q.correctAnswer === "string") {
+          if (studentAns.length === 1 && studentAns[0].trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) {
+            isCorrect = true;
+          }
+        }
+      } else if (q.type === "isian_singkat") {
+        if (typeof studentAns === "string" && q.correctAnswer) {
+          const correctAnswers = Array.isArray(q.correctAnswer)
+            ? q.correctAnswer.map(ans => ans.trim().toLowerCase())
+            : [String(q.correctAnswer).trim().toLowerCase()];
+          if (correctAnswers.includes(studentAns.trim().toLowerCase())) {
+            isCorrect = true;
+          }
+        }
+      } else if (q.type === "menjodohkan") {
+        if (typeof studentAns === "object" && studentAns !== null && q.correctMatching) {
+          let allCorrect = true;
+          const leftKeys = Object.keys(q.correctMatching);
+          if (leftKeys.length > 0) {
+            for (const key of leftKeys) {
+              if (String(studentAns[key] || "").trim().toLowerCase() !== String(q.correctMatching[key]).trim().toLowerCase()) {
+                allCorrect = false;
+                break;
+              }
+            }
+            if (allCorrect) isCorrect = true;
+          }
+        }
+      } else if (q.type === "uraian") {
+        if (typeof studentAns === "string" && studentAns.trim().length >= 5) {
+          isCorrect = true;
+        }
+      }
+
+      if (isCorrect) {
+        earnedPoints += qPoints;
+        correctCount++;
+      }
+    });
+
+    const finalScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
+    currentStudent.score = finalScore;
+    currentStudent.correctCount = correctCount;
+    currentStudent.totalCount = totalCount;
 
     // Call Gemini to generate a proctor report
     try {
@@ -730,6 +1201,7 @@ Siswa melakukan total ${currentStudent.violationsCount} aktivitas yang dinilai m
 ${currentStudent.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\n2. Hubungi orang tua siswa terkait rekam kecurangan di sistem." : "1. Disahkan hasil ujiannya.\n2. Berikan apresiasi atas integritas pengerjaannya."}`;
     }
 
+    saveDatabase();
     res.json({
       success: true,
       student: currentStudent
@@ -738,26 +1210,30 @@ ${currentStudent.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\n2. Hubungi 
 
   // Admin/Teacher: AI-powered dynamic question generation using Gemini
   app.post("/api/generate-questions", async (req, res) => {
-    const { subject, kelas } = req.body;
+    const { subject, kelas, count } = req.body;
     if (!subject) {
       return res.status(400).json({ error: "Mata pelajaran harus dipilih untuk generator soal." });
     }
 
+    let targetCount = parseInt(count, 10) || 3;
+    if (targetCount < 1) targetCount = 1;
+    if (targetCount > 50) targetCount = 50;
+
     try {
       const gemini = getGeminiClient();
       const prompt = `Anda adalah penyusun materi instrumen ujian nasional ANBK (Asesmen Nasional Berbasis Komputer) Kemendikbud-Ristek yang berspesialisasi dalam metode AKM (Asesmen Kompetensi Minimum).
-Tolong buatkan 3 butir soal berkualitas tinggi dengan mata pelajaran: "${subject}".
+Tolong buatkan TEPAT ${targetCount} butir soal berkualitas tinggi dengan mata pelajaran: "${subject}".
 Tiap soal harus mengukur tingkat literasi mendalam atau numerasi analitis.
 
 Persyaratan format:
+- Jumlah total soal yang dihasilkan HARUS TEPAT ${targetCount} butir.
 - Setiap soal harus menyertakan **STIMULUS**. Stimulus berupa cerita pendek, bacaan berita, data kasus, skenario, atau fakta ilmiah mendalam (minimal 3 kalimat yang berisi informasi detail/konteks).
-- Soal HARUS bertipe sebagai berikut (jangan melenceng dari jenis ini):
-  1. Soal 1: tipe "pilihan_ganda" (MCQ dengan 4 opsi A, B, C, D).
-  2. Soal 2: tipe "pilihan_ganda_kompleks" (Checkboxes di mana siswa bisa memilih lebih dari satu jawaban benar. Sediakan 4 opsi, dan correctAnswer berupa array berisi teks opsi yang benar).
-  3. Soal 3: tipe "isian_singkat" (Isian kata pendek yang ringkas, sertakan correctAnswer berupa string jawaban ringkasnya).
+- Variasikan tipe soal secara berkala/seimbang di antara tiga tipe berikut:
+  1. "pilihan_ganda" (MCQ dengan 4 opsi A, B, C, D dan satu string correctAnswer berupa teks opsi lengkap yang dipilih, misal "A. ...").
+  2. "pilihan_ganda_kompleks" (Siswa dapat memilih lebih dari satu jawaban benar. Sediakan 4 opsi, dan correctAnswer berupa array berisi teks opsi-opsi yang benar, misal ["A. ...", "C. ..."]).
+  3. "isian_singkat" (Isian kata pendek yang ringkas, sertakan correctAnswer berupa string jawaban ringkasnya).
 
-Format respons harus berupa JSON ARRAY dengan properti persis seperti berikut (jangan sertakan teks pengantar apa-apa di luar JSON, langsung cetak array raw JSON):
-\`\`\`json
+Format respons harus berupa JSON ARRAY dengan tepat ${targetCount} objek di dalamnya. Setiap objek harus memiliki properti persis seperti berikut (jangan sertakan teks pengantar apa-apa di luar JSON, langsung cetak array raw JSON):
 [
   {
     "id": "gen_1",
@@ -785,8 +1261,7 @@ Format respons harus berupa JSON ARRAY dengan properti persis seperti berikut (j
     "correctAnswer": "jawaban tepat",
     "points": 35
   }
-]
-\`\`\``;
+]`;
 
       const response = await gemini.models.generateContent({
         model: "gemini-3.5-flash",
@@ -816,10 +1291,11 @@ Format respons harus berupa JSON ARRAY dengan properti persis seperti berikut (j
         const otherClasses = existing.filter(q => (q.kelas || "Semua Kelas") !== targetKelas);
 
         defaultQuestions[subject] = [...otherClasses, ...formatted];
+        saveDatabase();
         return res.json({
           success: true,
           questions: formatted,
-          message: `Berhasil men-generate 3 soal baru dari AI Gemini untuk mata pelajaran: ${subject}.`
+          message: `Berhasil men-generate ${formatted.length} soal baru dari AI Gemini untuk mata pelajaran: ${subject}.`
         });
       } else {
         throw new Error("Format JSON respons tidak valid atau kosong.");
@@ -849,6 +1325,7 @@ Format respons harus berupa JSON ARRAY dengan properti persis seperti berikut (j
 
     violationLogs.length = 0;
     examToken = "ANBK99";
+    saveDatabase();
 
     res.json({ success: true, message: "Semua status siswa dan log kecurangan diatur ulang ke kondisi default!" });
   });
