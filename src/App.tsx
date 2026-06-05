@@ -561,6 +561,7 @@ export default function App() {
   const [newSubjectName, setNewSubjectName] = useState("");
   const [isEditingSubject, setIsEditingSubject] = useState(false);
   const [editSubjectName, setEditSubjectName] = useState("");
+  const [isAddingSubject, setIsAddingSubject] = useState(false);
   const [activeProctorTab, setActiveProctorTab] = useState<"ai" | "pdf" | "manual">("ai");
   const [generatorTargetKelas, setGeneratorTargetKelas] = useState("X Keperawatan");
 
@@ -639,7 +640,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error("Gagal memperbarui rekapan nilai:", err);
+      console.warn("Gagal memperbarui rekapan nilai (non-fatal):", err);
     }
   };
 
@@ -754,7 +755,7 @@ export default function App() {
         await refreshGradesRecap();
       }
     } catch (err) {
-      console.error("Gagal memperbarui status server:", err);
+      console.warn("Gagal memperbarui status server (non-fatal):", err);
     }
   };
 
@@ -857,7 +858,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error("Gagal melakukan sinkronisasi data lokal:", err);
+      console.warn("Gagal melakukan sinkronisasi data lokal (non-fatal):", err);
     }
   };
 
@@ -894,7 +895,7 @@ export default function App() {
         setQuestions(data.questions || []);
       }
     } catch (err) {
-      console.error("Gagal mendapatkan daftar soal:", err);
+      console.warn("Gagal mendapatkan daftar soal (non-fatal):", err);
     }
   };
 
@@ -1339,6 +1340,7 @@ export default function App() {
         setSubjectsList(data.subjects);
         setSubjectToGenerate(nameToAdd);
         setNewSubjectName("");
+        setIsAddingSubject(false);
         alert(`Mata pelajaran "${nameToAdd}" berhasil ditambahkan!`);
         await syncLocalAndServerData();
       } else {
@@ -3374,37 +3376,45 @@ export default function App() {
                   <h3 className="text-base font-black text-slate-850">Manajemen Bank Soal & Instrument Generator</h3>
                 </div>
 
-                {/* Inline Add Subject Form */}
-                <div className="flex items-center gap-1.5 self-start sm:self-auto">
-                  <input
-                    type="text"
-                    placeholder="Tambah Mata Pelajaran Baru..."
-                    value={newSubjectName}
-                    onChange={(e) => setNewSubjectName(e.target.value)}
-                    className="py-1 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 w-44"
-                  />
-                  <button
-                    onClick={handleAddSubject}
-                    className="p-1 px-2.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition whitespace-nowrap"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Tambah</span>
-                  </button>
-                  <button
-                    onClick={handleSaveDatabase}
-                    title="Simpan perubahan bank & mata pelajaran secara permanen ke server"
-                    className="p-1 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition whitespace-nowrap shadow-sm"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Simpan</span>
-                  </button>
-                </div>
+                {/* Inline Add Subject Form removed */}
               </div>
 
               {/* Subject Selector and Mode Tab Controls */}
               <div className="p-4 bg-slate-50 border border-slate-150 rounded-2xl flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
                 <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                  {isEditingSubject ? (
+                  {isAddingSubject ? (
+                    <div className="space-y-1 w-full sm:w-auto">
+                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Tambah Mata Pelajaran Baru:</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={newSubjectName}
+                          onChange={(e) => setNewSubjectName(e.target.value)}
+                          className="w-full sm:w-60 px-3 py-1.5 bg-white border-2 border-emerald-500 rounded-xl text-slate-850 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-emerald-400 block shadow-sm"
+                          placeholder="Nama mata pelajaran baru..."
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleAddSubject();
+                            if (e.key === "Escape") setIsAddingSubject(false);
+                          }}
+                        />
+                        <button
+                          onClick={handleAddSubject}
+                          title="Simpan mata pelajaran baru"
+                          className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-emerald-750 font-bold"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setIsAddingSubject(false)}
+                          title="Batal"
+                          className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-slate-200"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : isEditingSubject ? (
                     <div className="space-y-1 w-full sm:w-auto">
                       <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Edit Nama Mata Pelajaran:</span>
                       <div className="flex items-center gap-1.5">
@@ -3423,7 +3433,7 @@ export default function App() {
                         <button
                           onClick={handleEditSubject}
                           title="Simpan perubahan nama"
-                          className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-emerald-700 font-bold"
+                          className="p-2 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-indigo-750 font-bold"
                         >
                           <Check className="w-4 h-4" />
                         </button>
@@ -3458,6 +3468,16 @@ export default function App() {
                           className="p-2.5 bg-slate-100 hover:bg-slate-200 text-indigo-650 hover:text-indigo-800 rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-slate-200"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsAddingSubject(true);
+                            setNewSubjectName("");
+                          }}
+                          title="Masukkan/Tambah Mata Pelajaran Baru"
+                          className="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-emerald-700"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
