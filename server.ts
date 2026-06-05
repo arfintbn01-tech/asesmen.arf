@@ -910,6 +910,41 @@ async function startServer() {
     res.json({ success: true, subjects: Object.keys(defaultQuestions) });
   });
 
+  // Edit/Rename an existing subject
+  app.post("/api/subjects/edit", (req, res) => {
+    const { oldName, newName } = req.body;
+    if (!oldName || !oldName.trim() || !newName || !newName.trim()) {
+      return res.status(400).json({ error: "Nama mata pelajaran lama dan baru harus diisi" });
+    }
+    const trimmedOld = oldName.trim();
+    const trimmedNew = newName.trim();
+
+    if (!defaultQuestions[trimmedOld]) {
+      return res.status(404).json({ error: "Mata pelajaran lama tidak ditemukan" });
+    }
+
+    if (trimmedOld !== trimmedNew) {
+      if (defaultQuestions[trimmedNew]) {
+        return res.status(400).json({ error: "Mata pelajaran dengan nama baru tersebut sudah ada" });
+      }
+
+      // Rename in the defaultQuestions map
+      defaultQuestions[trimmedNew] = defaultQuestions[trimmedOld];
+      delete defaultQuestions[trimmedOld];
+
+      // Update in students records
+      Object.keys(students).forEach((id) => {
+        if (students[id].subject === trimmedOld) {
+          students[id].subject = trimmedNew;
+        }
+      });
+
+      saveDatabase();
+    }
+
+    res.json({ success: true, subjects: Object.keys(defaultQuestions) });
+  });
+
   // Save manual questions for a subject
   app.post("/api/questions/manual", (req, res) => {
     const { subject, questions, kelas } = req.body;

@@ -33,7 +33,8 @@ import {
   Download,
   GraduationCap,
   Edit2,
-  CheckCircle
+  CheckCircle,
+  X
 } from "lucide-react";
 import StudentLogin from "./components/StudentLogin";
 import { Student, Question, ViolationLog } from "./types";
@@ -558,6 +559,8 @@ export default function App() {
     "Numerasi (Matematika)"
   ]);
   const [newSubjectName, setNewSubjectName] = useState("");
+  const [isEditingSubject, setIsEditingSubject] = useState(false);
+  const [editSubjectName, setEditSubjectName] = useState("");
   const [activeProctorTab, setActiveProctorTab] = useState<"ai" | "pdf" | "manual">("ai");
   const [generatorTargetKelas, setGeneratorTargetKelas] = useState("X Keperawatan");
 
@@ -1340,6 +1343,57 @@ export default function App() {
         await syncLocalAndServerData();
       } else {
         alert(`Gagal menambahkan mata pelajaran: ${data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Gagal menghubungi server: ${err.message}`);
+    }
+  };
+
+  // Proctor Actions: Edit/Rename dynamic subject
+  const handleEditSubject = async () => {
+    if (!editSubjectName.trim()) {
+      alert("Nama mata pelajaran tidak boleh kosong!");
+      return;
+    }
+    const nameToEdit = editSubjectName.trim();
+    if (nameToEdit === subjectToGenerate) {
+      setIsEditingSubject(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/subjects/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ oldName: subjectToGenerate, newName: nameToEdit }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // Also update local storage values so syncLocalAndServerData keeps up with the rename
+        const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+        const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+        if (localSubjectsRaw && localQuestionsRaw) {
+          const localSubjects: string[] = JSON.parse(localSubjectsRaw);
+          const localQuestions: Record<string, Question[]> = JSON.parse(localQuestionsRaw);
+
+          const idx = localSubjects.indexOf(subjectToGenerate);
+          if (idx !== -1) {
+            localSubjects[idx] = nameToEdit;
+          }
+          if (localQuestions[subjectToGenerate]) {
+            localQuestions[nameToEdit] = localQuestions[subjectToGenerate];
+            delete localQuestions[subjectToGenerate];
+          }
+          localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjects));
+          localStorage.setItem("anbk_questions_map", JSON.stringify(localQuestions));
+        }
+
+        setSubjectsList(data.subjects);
+        setSubjectToGenerate(nameToEdit);
+        setIsEditingSubject(false);
+        alert(`Mata pelajaran berhasil diubah menjadi "${nameToEdit}"!`);
+        await syncLocalAndServerData();
+      } else {
+        alert(`Gagal mengubah nama mata pelajaran: ${data.error}`);
       }
     } catch (err: any) {
       alert(`Gagal menghubungi server: ${err.message}`);
@@ -3350,18 +3404,64 @@ export default function App() {
               {/* Subject Selector and Mode Tab Controls */}
               <div className="p-4 bg-slate-50 border border-slate-150 rounded-2xl flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
                 <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                  <div className="space-y-1 w-full sm:w-auto">
-                    <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">Mata Pelajaran yang Dikelola:</span>
-                    <select
-                      value={subjectToGenerate}
-                      onChange={(e) => setSubjectToGenerate(e.target.value)}
-                      className="w-full sm:w-64 pl-3 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-850 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 block cursor-pointer shadow-sm"
-                    >
-                      {subjectsList.map((subName) => (
-                        <option key={subName} value={subName}>{subName}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {isEditingSubject ? (
+                    <div className="space-y-1 w-full sm:w-auto">
+                      <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Edit Nama Mata Pelajaran:</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={editSubjectName}
+                          onChange={(e) => setEditSubjectName(e.target.value)}
+                          className="w-full sm:w-60 px-3 py-1.5 bg-white border-2 border-indigo-500 rounded-xl text-slate-850 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-400 block shadow-sm"
+                          placeholder="Nama mata pelajaran..."
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleEditSubject();
+                            if (e.key === "Escape") setIsEditingSubject(false);
+                          }}
+                        />
+                        <button
+                          onClick={handleEditSubject}
+                          title="Simpan perubahan nama"
+                          className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-emerald-700 font-bold"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setIsEditingSubject(false)}
+                          title="Batal"
+                          className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-slate-200"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1 w-full sm:w-auto">
+                      <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">Mata Pelajaran yang Dikelola:</span>
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          value={subjectToGenerate}
+                          onChange={(e) => setSubjectToGenerate(e.target.value)}
+                          className="w-full sm:w-64 pl-3 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-850 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 block cursor-pointer shadow-sm"
+                        >
+                          {subjectsList.map((subName) => (
+                            <option key={subName} value={subName}>{subName}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => {
+                            setIsEditingSubject(true);
+                            setEditSubjectName(subjectToGenerate);
+                          }}
+                          title="Ubah nama mata pelajaran terpilih"
+                          className="p-2.5 bg-slate-100 hover:bg-slate-200 text-indigo-650 hover:text-indigo-800 rounded-xl cursor-pointer transition shadow-sm flex items-center justify-center border border-slate-200"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-1 w-full sm:w-auto">
                     <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Target Rombel / Kelas Soal:</span>
