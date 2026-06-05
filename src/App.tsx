@@ -760,10 +760,12 @@ export default function App() {
   };
 
   const syncLocalAndServerData = async () => {
+    let success = false;
     try {
       // 1. Fetch entire database of questions and subjects from server
       const res = await fetch("/api/questions/all");
       if (res.ok) {
+        success = true;
         const data = await res.json();
         const serverQuestions = data.defaultQuestions || {};
         const serverSubjects = Object.keys(serverQuestions);
@@ -859,6 +861,25 @@ export default function App() {
       }
     } catch (err) {
       console.warn("Gagal melakukan sinkronisasi data lokal (non-fatal):", err);
+    }
+
+    // Fallback for static hosts (GitHub Pages, Vercel SPA) if server fetch fails or is not ok
+    if (!success) {
+      const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+      if (localSubjectsRaw) {
+        try {
+          const localSubjects: string[] = JSON.parse(localSubjectsRaw);
+          if (Array.isArray(localSubjects) && localSubjects.length > 0) {
+            // Merge with local standard defaults
+            const defaults = [
+              "Literasi Bahasa Indonesia",
+              "Numerasi (Matematika)"
+            ];
+            const merged = Array.from(new Set([...defaults, ...localSubjects]));
+            setSubjectsList(merged);
+          }
+        } catch (_) {}
+      }
     }
   };
 
@@ -1329,6 +1350,24 @@ export default function App() {
       return;
     }
     const nameToAdd = newSubjectName.trim();
+
+    // Check local duplicate first
+    const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+    let currentSubjectsList = [...subjectsList];
+    if (localSubjectsRaw) {
+      try {
+        const parsed = JSON.parse(localSubjectsRaw);
+        if (Array.isArray(parsed)) {
+          currentSubjectsList = Array.from(new Set([...currentSubjectsList, ...parsed]));
+        }
+      } catch (_) {}
+    }
+
+    if (currentSubjectsList.map(s => s.toLowerCase()).includes(nameToAdd.toLowerCase())) {
+      alert(`Mata pelajaran "${nameToAdd}" sudah ada!`);
+      return;
+    }
+
     try {
       const res = await fetch("/api/subjects/add", {
         method: "POST",
@@ -1343,12 +1382,32 @@ export default function App() {
         setIsAddingSubject(false);
         alert(`Mata pelajaran "${nameToAdd}" berhasil ditambahkan!`);
         await syncLocalAndServerData();
+        return;
       } else {
-        alert(`Gagal menambahkan mata pelajaran: ${data.error}`);
+        console.warn(`Gagal menambahkan mata pelajaran di server: ${data.error}`);
       }
     } catch (err: any) {
-      alert(`Gagal menghubungi server: ${err.message}`);
+      console.warn("Gagal menghubungi server, menggunakan penyimpanan lokal:", err.message);
     }
+
+    // Client-side/Offline/GitHub Pages fallback: Save directly in local storage & local state
+    const updatedSubjects = Array.from(new Set([...currentSubjectsList, nameToAdd]));
+    localStorage.setItem("anbk_subjects_list", JSON.stringify(updatedSubjects));
+
+    const localQuestionsRaw = localStorage.getItem("anbk_questions_map") || "{}";
+    try {
+      const localQuestions = JSON.parse(localQuestionsRaw);
+      if (!localQuestions[nameToAdd]) {
+        localQuestions[nameToAdd] = [];
+        localStorage.setItem("anbk_questions_map", JSON.stringify(localQuestions));
+      }
+    } catch (_) {}
+
+    setSubjectsList(updatedSubjects);
+    setSubjectToGenerate(nameToAdd);
+    setNewSubjectName("");
+    setIsAddingSubject(false);
+    alert(`Mata pelajaran "${nameToAdd}" berhasil ditambahkan ke penyimpanan lokal (Mode Offline/GitHub Pages)!`);
   };
 
   // Proctor Actions: Edit/Rename dynamic subject
@@ -1362,6 +1421,7 @@ export default function App() {
       setIsEditingSubject(false);
       return;
     }
+
     try {
       const res = await fetch("/api/subjects/edit", {
         method: "POST",
@@ -1394,12 +1454,53 @@ export default function App() {
         setIsEditingSubject(false);
         alert(`Mata pelajaran berhasil diubah menjadi "${nameToEdit}"!`);
         await syncLocalAndServerData();
+        return;
       } else {
-        alert(`Gagal mengubah nama mata pelajaran: ${data.error}`);
+        console.warn(`Gagal mengubah nama mata pelajaran di server: ${data.error}`);
       }
     } catch (err: any) {
-      alert(`Gagal menghubungi server: ${err.message}`);
+      console.warn("Gagal menghubungi server, menggunakan penyimpanan lokal:", err.message);
     }
+
+    // Client-side/Offline/GitHub Pages fallback: Edit in local storage
+    const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+    const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+    let localSubjects: string[] = [...subjectsList];
+    let localQuestions: Record<string, Question[]> = {};
+
+    if (localSubjectsRaw) {
+      try {
+        localSubjects = JSON.parse(localSubjectsRaw);
+      } catch (_) {}
+    }
+    if (localQuestionsRaw) {
+      try {
+        localQuestions = JSON.parse(localQuestionsRaw);
+      } catch (_) {}
+    }
+
+    const idx = localSubjects.indexOf(subjectToGenerate);
+    if (idx !== -1) {
+      localSubjects[idx] = nameToEdit;
+    } else {
+      const staticIdx = localSubjects.indexOf(subjectToGenerate);
+      if (staticIdx === -1) {
+        localSubjects = localSubjects.map(s => s === subjectToGenerate ? nameToEdit : s);
+      }
+    }
+
+    if (localQuestions[subjectToGenerate]) {
+      localQuestions[nameToEdit] = localQuestions[subjectToGenerate];
+      delete localQuestions[subjectToGenerate];
+    }
+
+    localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjects));
+    localStorage.setItem("anbk_questions_map", JSON.stringify(localQuestions));
+
+    setSubjectsList(localSubjects);
+    setSubjectToGenerate(nameToEdit);
+    setIsEditingSubject(false);
+    alert(`Mata pelajaran berhasil diubah menjadi "${nameToEdit}" di penyimpanan lokal (Mode Offline/GitHub Pages)!`);
   };
 
   // Proctor Actions: Save database configuration permanently to JSON file
