@@ -488,11 +488,11 @@ export default function App() {
   const [activeRole, setActiveRole] = useState<"siswa" | "pengawas">("siswa");
 
   // Global Dashboard Statuses (Shared via polling)
-  const [token, setToken] = useState("ANBK99");
+  const [token, setToken] = useState(() => localStorage.getItem("anbk_exam_token") || "ANBK99");
   const [students, setStudents] = useState<Student[]>([]);
   const [violationLogs, setViolationLogs] = useState<ViolationLog[]>([]);
-  const [examStartTime, setExamStartTime] = useState("");
-  const [examEndTime, setExamEndTime] = useState("");
+  const [examStartTime, setExamStartTime] = useState(() => localStorage.getItem("anbk_exam_start_time") || "");
+  const [examEndTime, setExamEndTime] = useState(() => localStorage.getItem("anbk_exam_end_time") || "");
 
   // Editor states for exam times in Proctor module
   const [inputStartTime, setInputStartTime] = useState("");
@@ -756,6 +756,19 @@ export default function App() {
       }
     } catch (err) {
       console.warn("Gagal memperbarui status server (non-fatal):", err);
+      // Fallback: load local token & exam settings when offline or static (GitHub Pages)
+      const localToken = localStorage.getItem("anbk_exam_token");
+      if (localToken) setToken(localToken);
+      const localStart = localStorage.getItem("anbk_exam_start_time");
+      if (localStart) {
+        setExamStartTime(localStart);
+        setInputStartTime(localStart);
+      }
+      const localEnd = localStorage.getItem("anbk_exam_end_time");
+      if (localEnd) {
+        setExamEndTime(localEnd);
+        setInputEndTime(localEnd);
+      }
     }
   };
 
@@ -1206,15 +1219,29 @@ export default function App() {
 
   // Proctor Actions: Generate New Exam Token
   const generateNewToken = async () => {
+    let success = false;
     try {
       const res = await fetch("/api/token/generate", { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         setToken(data.token);
         localStorage.setItem("anbk_exam_token", data.token);
+        success = true;
       }
     } catch (err) {
-      console.error("Gagal men-generate token baru:", err);
+      console.warn("Gagal men-generate token baru di server (non-fatal):", err);
+    }
+
+    if (!success) {
+      // Offline/GitHub Pages fallback: generate random 6-character token
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      let randomToken = "";
+      for (let i = 0; i < 6; i++) {
+        randomToken += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      setToken(randomToken);
+      localStorage.setItem("anbk_exam_token", randomToken);
+      alert(`Token baru berhasil dirilis (Mode Offline/GitHub Pages): ${randomToken}`);
     }
   };
 
@@ -1222,6 +1249,7 @@ export default function App() {
   const handleSaveExamTimes = async () => {
     setIsSavingTime(true);
     setTimeSaveSuccess(false);
+    let success = false;
     try {
       const res = await fetch("/api/settings/exam-time", {
         method: "POST",
@@ -1236,14 +1264,23 @@ export default function App() {
         localStorage.setItem("anbk_exam_start_time", inputStartTime);
         localStorage.setItem("anbk_exam_end_time", inputEndTime);
         await refreshGlobalStatus();
-        setTimeout(() => {
-          setTimeSaveSuccess(false);
-        }, 3000);
+        success = true;
       }
     } catch (err) {
-      console.error("Gagal menyimpan jam operasional ujian:", err);
+      console.warn("Gagal menyimpan jam operasional ujian di server (non-fatal):", err);
     } finally {
+      if (!success) {
+        // Fallback for static hosts (GitHub Pages)
+        localStorage.setItem("anbk_exam_start_time", inputStartTime);
+        localStorage.setItem("anbk_exam_end_time", inputEndTime);
+        setExamStartTime(inputStartTime);
+        setExamEndTime(inputEndTime);
+        setTimeSaveSuccess(true);
+      }
       setIsSavingTime(false);
+      setTimeout(() => {
+        setTimeSaveSuccess(false);
+      }, 3000);
     }
   };
 
