@@ -2460,7 +2460,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
     setIsGeneratingPdf(true);
     setPdfGenMessage("⌛ Membaca file dan memproses ke AI Gemini...");
 
-    // Helper to extract clean content text from txt or pdf files client-side
+    // Helper to extract clean content text from txt, xlsx, or pdf files client-side
     const extractDocumentText = async (file: File): Promise<string> => {
       const fileNameLower = file.name.toLowerCase();
       
@@ -2476,11 +2476,138 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
         }
       }
 
-      // 2. Read as ArrayBuffer to extract visible ascii characters or PDF stream elements
+      // 1b. If Excel workbook sheet, extract cell texts
+      if (fileNameLower.endsWith(".xlsx") || fileNameLower.endsWith(".xls")) {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const workbook = XLSX.read(arrayBuffer, { type: "array" });
+          const textRows: string[] = [];
+          for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            const jsonRows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            for (const row of jsonRows) {
+              if (Array.isArray(row)) {
+                const cleanRow = row.filter(cell => cell !== null && cell !== "").map(cell => String(cell).trim());
+                if (cleanRow.length > 0) {
+                  textRows.push(cleanRow.join(" "));
+                }
+              }
+            }
+          }
+          if (textRows.length > 0) {
+            return textRows.join("\n");
+          }
+        } catch (e) {
+          console.warn("Gagal membaca file excel client-side:", e);
+        }
+      }
+
+      // 2. Read as ArrayBuffer to extract visible ascii characters or decompressed PDF streams
       try {
         const arrayBuffer = await file.arrayBuffer();
         const view = new Uint8Array(arrayBuffer);
         
+        // Native zlib/deflate stream decompressor
+        const decompressDeflate = async (bytes: Uint8Array): Promise<string> => {
+          if (typeof window === "undefined" || !("DecompressionStream" in window)) {
+            return "";
+          }
+          try {
+            const ds = new (window as any).DecompressionStream("deflate");
+            const writer = ds.writable.getWriter();
+            writer.write(bytes);
+            writer.close();
+            const rawBuffer = await new Response(ds.readable).arrayBuffer();
+            return new TextDecoder().decode(rawBuffer);
+          } catch (err) {
+            // Deflate raw fallback (without zlib standard headers)
+            try {
+              const ds = new (window as any).DecompressionStream("deflate-raw");
+              const writer = ds.writable.getWriter();
+              writer.write(bytes);
+              writer.close();
+              const rawBuffer = await new Response(ds.readable).arrayBuffer();
+              return new TextDecoder().decode(rawBuffer);
+            } catch (_) {}
+            return "";
+          }
+        };
+
+        const textStrings: string[] = [];
+        const binaryStringDecoder = new TextDecoder("latin1");
+        const fileStr = binaryStringDecoder.decode(view);
+        
+        let pos = 0;
+        let streamStartIndex = 0;
+        const maxStreamsToProcess = 120;
+        let processedStreams = 0;
+
+        while ((streamStartIndex = fileStr.indexOf("stream", pos)) !== -1 && processedStreams < maxStreamsToProcess) {
+          const streamEndIndex = fileStr.indexOf("endstream", streamStartIndex);
+          if (streamEndIndex === -1) break;
+          
+          let dataStart = streamStartIndex + 6;
+          if (fileStr.charCodeAt(dataStart) === 13) dataStart++; // \r
+          if (fileStr.charCodeAt(dataStart) === 10) dataStart++; // \n
+          
+          const dataEnd = streamEndIndex;
+          if (dataEnd > dataStart) {
+            const streamBytes = view.slice(dataStart, dataEnd);
+            
+            // Check lookback range for /FlateDecode compression filter
+            const lookbackStart = Math.max(0, streamStartIndex - 200);
+            const lookbackStr = fileStr.slice(lookbackStart, streamStartIndex);
+            
+            if (lookbackStr.includes("/FlateDecode") || lookbackStr.includes("/Flate")) {
+              try {
+                const decompressed = await decompressDeflate(streamBytes);
+                if (decompressed && decompressed.trim().length > 10) {
+                  textStrings.push(decompressed);
+                  processedStreams++;
+                }
+              } catch (_) {}
+            } else {
+              // Plain ascii uncompressed stream
+              try {
+                const text = new TextDecoder("utf-8").decode(streamBytes);
+                if (text && text.trim().length > 10) {
+                  textStrings.push(text);
+                  processedStreams++;
+                }
+              } catch (_) {}
+            }
+          }
+          pos = streamEndIndex + 9;
+        }
+
+        // Parse individual parentheses text groupings across decompressed streams
+        if (textStrings.length > 0) {
+          const phrases: string[] = [];
+          const parenRegex = /\(([^)]+)\)/g;
+          for (const rawStream of textStrings) {
+            let match;
+            while ((match = parenRegex.exec(rawStream)) !== null) {
+              let val = match[1];
+              if (val.length <= 1) continue;
+              if (val.startsWith("/") || val.includes("Identity") || val.includes("Adobe") || val.includes("Font") || val.includes("ProcSet") || val.includes("Encoding")) {
+                continue;
+              }
+              // Resolve octal character coding (e.g. \231)
+              val = val.replace(/\\([0-7]{3})/g, (m, octal) => String.fromCharCode(parseInt(octal, 8)));
+              val = val.replace(/\\(.)/g, "$1");
+              
+              const clean = val.trim();
+              if (clean.length > 2 && !/^[0-9.-]+$/.test(clean) && !clean.includes("font") && !clean.includes("Widths")) {
+                phrases.push(clean);
+              }
+            }
+          }
+          if (phrases.length > 10) {
+            return phrases.join(" ");
+          }
+        }
+
+        // 3. Regex match directly in binary data if stream decompression was empty/omitted
         let binaryString = "";
         const chunkSize = 65536;
         for (let i = 0; i < view.length; i += chunkSize) {
@@ -2488,28 +2615,23 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           binaryString += String.fromCharCode.apply(null, Array.from(sub));
         }
 
-        const textChunks: string[] = [];
-        
-        // Extract standard plaintext strings enclosed in (...) inside PDF operators (like Tj, TJ)
+        const fallbackChunks: string[] = [];
         const tjRegex = /\(([^)]+)\)\s*(?:Tj|TJ|'|")/g;
         let match;
         while ((match = tjRegex.exec(binaryString)) !== null) {
           let rawText = match[1];
-          // Solve octal escape sequences
           rawText = rawText.replace(/\\([\d]{3})/g, (m, c) => String.fromCharCode(parseInt(c, 8)));
-          // Solve other escaped symbols
           rawText = rawText.replace(/\\(.)/g, "$1");
           
           const clean = rawText.trim();
           if (clean.length > 2 && !clean.includes("/") && !clean.includes("font") && !/^[0-9.-]+$/.test(clean)) {
-            textChunks.push(clean);
+            fallbackChunks.push(clean);
           }
         }
 
-        let extracted = textChunks.join(" ");
+        let extracted = fallbackChunks.join(" ");
 
-        // Fallback for compressed PDF streams: Look for contiguous alphanumeric words >= 4 characters
-        if (textChunks.length < 5) {
+        if (fallbackChunks.length < 5) {
           const words = binaryString.match(/[a-zA-Z]{4,}/g) || [];
           const ignoredKeywords = new Set([
             "obj", "endobj", "stream", "endstream", "xref", "trailer", "startxref", 
@@ -2555,15 +2677,22 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
       // 1. Parse and extract useful sentences from text source
       let sentencesList: string[] = [];
       if (extractedText && extractedText.trim().length > 20) {
-        // Clean double spaces/returns
         const cleaned = extractedText.replace(/\s+/g, " ").trim();
-        // Spilt into sentence clauses
-        const matches = cleaned.match(/[^.!?]+[.!?]+/g);
+        const matches = cleaned.match(/[^.!?]{10,250}[.!?]/g);
         if (matches && matches.length > 0) {
-          sentencesList = matches.map(s => s.trim()).filter(s => s.length > 15 && s.length < 280);
-        } else {
-          // Fallback parsing by comma
-          sentencesList = cleaned.split(/(?=[A-Z][a-z]+)/).map(s => s.trim()).filter(s => s.length > 20);
+          sentencesList = matches.map(s => s.trim()).filter(s => s.length > 15);
+        }
+        
+        // Fallback: group words into clauses if punctuation-based splitting is sparse
+        if (sentencesList.length < 5) {
+          const words = cleaned.split(/\s+/);
+          for (let i = 0; i < words.length; i += 15) {
+            const chunk = words.slice(i, i + 15);
+            if (chunk.length >= 5) {
+              const sentence = chunk.join(" ").trim();
+              sentencesList.push(sentence.endsWith(".") ? sentence : sentence + ".");
+            }
+          }
         }
       }
 
@@ -2599,6 +2728,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
         const idx2 = (i * 2 + 1) % sentencesList.length;
         const segment1 = sentencesList[idx1];
         const segment2 = sentencesList[idx2];
+        const otherSentence1 = sentencesList[(idx1 + 2) % sentencesList.length];
         
         const stimulus = `[KUTIPAN HASIL PARSING INTEGRAL REFERENSI: ${cleanFilename.toUpperCase()}]\n\n"${segment1} ${segment2}"\n\nPenelitian instrumen ujian dikembangkan langsung dari ekstraksi lembar dokumen digital pengawas secara dinamis (Mode Offline/GitHub Pages).`;
 
@@ -2606,7 +2736,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
         const wordTokens = `${segment1} ${segment2}`
           .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'\n]/g, "")
           .split(/\s+/)
-          .filter(token => token.length >= 5 && !/^[0-9]+$/.test(token));
+          .filter(token => token.length >= 5 && !/^[0-9]+$/.test(token) && token.toLowerCase() !== "berdasarkan" && token.toLowerCase() !== "dengan" && token.toLowerCase() !== "yang" && token.toLowerCase() !== "dalam" && token.toLowerCase() !== "untuk");
         
         const keyTerms = Array.from(new Set(wordTokens));
         if (keyTerms.length < 5) {
@@ -2670,7 +2800,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
             };
           } else {
             questionText = `Bagaimanakah integrasi data kuantitatif senilai ${val} dari dokumen membantu perumusan simpulan statistik yang akurat? Jabarkan penjelasan logis Anda.`;
-            correctAnswer = "";
+            correctAnswer = "Penjelasan siswa harus didukung oleh data kuantitatif senilai " + val + " yang tersaji di dokumen.";
           }
         } else {
           // Standard Literasi textual comprehensive analysis question creation
@@ -2680,52 +2810,55 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           const w4 = keyTerms[3 % keyTerms.length];
 
           if (type === "pilihan_ganda") {
-            questionText = `Berdasarkan gagasan penulisan dokumen di atas, apa posisi atau peran strategis dari istilah ilmiah "${w1}" berkaitan dengan topik bahasan "${w2}"?`;
+            questionText = `Berdasar pada konteks bahasan "${w1}" di dalam dokumen referensi "${cleanFilename}", manakah kesimpulan rincian yang paling tepat?`;
             options = [
-              `A. "${w1}" berfungsi sebagai instrumen pendukung pembangun kerangka "${w2}".`,
-              `B. Secara mutlak menolak relevansi dari "${w1}" dalam penyelesaian masalah utama.`,
-              `C. Menyimpulkan bahwasanya konsep "${w1}" sepenuhnya kontraproduktif dan tidak layak pakai.`,
-              `D. Menyatakan "${w1}" hanya sebagai kajian formalitas tanpa aplikasi riil lapangan.`
+              `A. ${segment1} (Merupakan fakta rujukan eksplisit dari dokumen)`,
+              `B. ${otherSentence1.replace(w1, w3)} (Argumen di luar konteks bahasan utama)`,
+              `C. Pembatasan aktivitas edukatif seputar "${w2}" bagi keseluruhan peserta evaluasi`,
+              `D. Melakukan peniadaan komparatif tanpa koordinasi dengan pihak penyelenggara`
             ];
-            correctAnswer = `A. "${w1}" berfungsi sebagai instrumen pendukung pembangun kerangka "${w2}".`;
+            correctAnswer = `A. ${segment1} (Merupakan fakta rujukan eksplisit dari dokumen)`;
           } else if (type === "pilihan_ganda_kompleks") {
-            questionText = `Pernyataan mana sajakah di bawah ini yang sejalan dengan uraian teoretis yang mengulas istilah "${w1}" dan "${w2}" di dalam kutipan referensi? (Pilih semua yang benar)`;
+            questionText = `Pernyataan mana sajakah di bawah ini yang paling BENAR merujuk pada isi tulisan referensi "${cleanFilename}"? (Pilih semua yang benar)`;
             options = [
-              `A. Konsep "${w1}" diuraikan secara bermakna memiliki andil integral pada isi wacana.`,
-              `B. Pembahasan mengenai "${w2}" memberikan pencerahan literasi yang relevan bagi pemahaman materi.`,
-              `C. Dokumen secara tegas menyatakan antusiasme rendah terhadap kemajuan metode "${w3}".`,
-              `D. Rangkuman paragraf tersebut secara keliru mendiskreditkan fungsi vital "${w4}".`
+              `A. Kutipan materi menegaskan bahwa: ${segment1}`,
+              `B. Dokumen memaparkan konteks aktual: ${segment2}`,
+              `C. Secara eksklusif melarang pengembangan kognitif bagi siswa program studi`,
+              `D. Seluruh sarana prasarana digital harus dinonaktifkan saat pembahasan dilakukan`
             ];
             correctAnswer = [
-              `A. Konsep "${w1}" diuraikan secara bermakna memiliki andil integral pada isi wacana.`,
-              `B. Pembahasan mengenai "${w2}" memberikan pencerahan literasi yang relevan bagi pemahaman materi.`
+              `A. Kutipan materi menegaskan bahwa: ${segment1}`,
+              `B. Dokumen memaparkan konteks aktual: ${segment2}`
             ];
           } else if (type === "isian_singkat") {
-            // Find a nice word in the first section of our sentence to hide for gap filling
-            const wordsInSeg1 = segment1.split(/\s+/).filter(tok => tok.length >= 6 && !tok.includes(".") && !tok.includes(","));
+            const wordsInSeg1 = segment1.split(/\s+/).filter(tok => tok.length >= 6 && !tok.includes(".") && !tok.includes(",") && !tok.includes("("));
             if (wordsInSeg1.length > 0) {
               const targetWord = wordsInSeg1[0];
-              const cleanWord = targetWord.replace(/[^A-Za-z]/g, "");
+              const cleanWord = targetWord.replace(/[^A-Za-z0-9]/g, "");
               const rumpangText = segment1.replace(targetWord, "_______");
-              questionText = `Isilah bagian rumpang (kosong) kalimat materi berikut dengan kosakata referensi yang paling tepat:\n\n"${rumpangText}"`;
+              questionText = `Isilah bagian rumpang (kosong) pada kutipan ulasan ilmiah materi berikut dengan kosakata rujukan yang paling tepat:\n\n"${rumpangText}"`;
               correctAnswer = cleanWord.toLowerCase();
             } else {
-              questionText = `Berdasarkan kutipan teks di atas, tuliskan satu istilah kunci kognitif penting yang diawali dengan huruf dasar "${w1.charAt(0).toUpperCase()}":`;
+              questionText = `Berdasarkan ulasan materi di atas, sebutkan satu terminologi kunci yang dibahas berkaitan dengan topik "${w1}":`;
               correctAnswer = w1.toLowerCase();
             }
           } else if (type === "menjodohkan") {
-            questionText = `Pasangkanlah konsep kata kunci yang disadur dari paragraf dokumen berikut dengan deskripsi penjelasan maknawi yang paling sesuai.`;
+            questionText = `Pasangkanlah konsep kata kunci penting dari referensi "${cleanFilename}" berikut dengan deskripsi penjelasan kontekstualnya yang paling sesuai.`;
+            
+            const cleanDesc1 = segment1.length > 60 ? segment1.slice(0, 60) + "..." : segment1;
+            const cleanDesc2 = segment2.length > 60 ? segment2.slice(0, 60) + "..." : segment2;
+
             matchingPairs = [
-              { left: w1, right: [`Gagasan utama penting yang memfokuskan ulasan tentang ${w1}`, `Fakta rincian kontekstual yang mendefinisikan tentang ${w2}`, "Keterangan intermezo", "Simpulan teoritis acak"] },
-              { left: w2, right: [`Gagasan utama penting yang memfokuskan ulasan tentang ${w1}`, `Fakta rincian kontekstual yang mendefinisikan tentang ${w2}`, "Keterangan intermezo", "Simpulan teoritis acak"] }
+              { left: `Istilah: "${w1}"`, right: [`Keterangan: ${cleanDesc1}`, `Keterangan: ${cleanDesc2}`, "Deskripsi opsional netral lainnya", "Informasi distractor umum"] },
+              { left: `Istilah: "${w2}"`, right: [`Keterangan: ${cleanDesc1}`, `Keterangan: ${cleanDesc2}`, "Deskripsi opsional netral lainnya", "Informasi distractor umum"] }
             ];
             correctMatching = {
-              [w1]: `Gagasan utama penting yang memfokuskan ulasan tentang ${w1}`,
-              [w2]: `Fakta rincian kontekstual yang mendefinisikan tentang ${w2}`
+              [`Istilah: "${w1}"`]: `Keterangan: ${cleanDesc1}`,
+              [`Istilah: "${w2}"`]: `Keterangan: ${cleanDesc2}`
             };
           } else {
-            questionText = `Deskripsikanlah argumentasi kritis Anda mengenai makna relasi keterkaitan antara kutipan pernyataan "...${segment1}..." dengan realitas dunia pendidikan modern saat ini!`;
-            correctAnswer = "";
+            questionText = `Deskripsikanlah analisis kritis Anda mengenai makna relasi keterkaitan antara kutipan pernyataan "...${segment1}..." dengan realitas dunia pendidikan modern saat ini!`;
+            correctAnswer = "Siswa diharapkan mampu merumuskan argumen yang sinkron dengan stimulus kutipan dokumen di atas.";
           }
         }
 
