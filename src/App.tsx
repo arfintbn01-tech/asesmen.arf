@@ -2471,61 +2471,90 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
     try {
       const reader = new FileReader();
       reader.onload = async () => {
-        const resultString = reader.result as string;
-        const base64Content = resultString.split(",")[1];
-        
-        let success = false;
-        let apiData: any = null;
-
         try {
-          const res = await fetch("/api/generate-from-pdf", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              subject: subjectToGenerate,
-              fileBase64: base64Content,
-              mimeType: pdfFile.type || "application/pdf",
-              kelas: generatorTargetKelas,
-              count: aiQuestionCount
-            }),
-          });
-          if (res.ok) {
-            apiData = await res.json();
-            success = true;
+          const resultString = reader.result as string;
+          if (!resultString) {
+            throw new Error("Konten file kosong atau gagal dibaca.");
           }
-        } catch (e) {
-          console.warn("Koneksi API gagal, menggunakan generator offline.");
-        }
+          const parts = resultString.split(",");
+          const base64Content = parts[1] || parts[0];
+          
+          let success = false;
+          let apiData: any = null;
 
-        if (success && apiData) {
-          setPdfGenMessage(`✅ Sukses! ${apiData.message}`);
-          setPdfFile(null);
-          await syncLocalAndServerData();
-        } else {
-          // Client-side fallback for GitHub Pages, static sites, Vercel 404
-          const count = parseInt(String(aiQuestionCount), 10) || 3;
-          const generated = generateOfflineQuestions(pdfFile.name, subjectToGenerate, count, generatorTargetKelas);
-
-          // Save inside local storage questions map
-          const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
-          const map = localQuestionsRaw ? JSON.parse(localQuestionsRaw) : {};
-          if (!map[subjectToGenerate]) {
-            map[subjectToGenerate] = [];
+          try {
+            const res = await fetch("/api/generate-from-pdf", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                subject: subjectToGenerate,
+                fileBase64: base64Content,
+                mimeType: pdfFile.type || "application/pdf",
+                kelas: generatorTargetKelas,
+                count: aiQuestionCount
+              }),
+            });
+            if (res.ok) {
+              apiData = await res.json();
+              success = true;
+            }
+          } catch (e) {
+            console.warn("Koneksi API gagal, menggunakan generator offline.", e);
           }
-          map[subjectToGenerate].push(...generated);
-          localStorage.setItem("anbk_questions_map", JSON.stringify(map));
 
-          // Ensure subject list exists
-          const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
-          let localSubjectsList: string[] = localSubjectsRaw ? JSON.parse(localSubjectsRaw) : [];
-          if (!localSubjectsList.includes(subjectToGenerate)) {
-            localSubjectsList.push(subjectToGenerate);
-            localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjectsList));
+          if (success && apiData) {
+            setPdfGenMessage(`✅ Sukses! ${apiData.message}`);
+            setPdfFile(null);
+            await syncLocalAndServerData();
+            setIsGeneratingPdf(false);
+          } else {
+            // Client-side fallback for GitHub Pages, static sites, Vercel 404
+            const count = parseInt(String(aiQuestionCount), 10) || 3;
+            const generated = generateOfflineQuestions(pdfFile.name, subjectToGenerate, count, generatorTargetKelas);
+
+            // Save inside local storage questions map with deep type safety
+            const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+            let map: any = {};
+            if (localQuestionsRaw) {
+              try {
+                map = JSON.parse(localQuestionsRaw);
+              } catch (_) {}
+            }
+            if (typeof map !== "object" || map === null || Array.isArray(map)) {
+              map = {};
+            }
+            if (!map[subjectToGenerate]) {
+              map[subjectToGenerate] = [];
+            } else if (!Array.isArray(map[subjectToGenerate])) {
+              map[subjectToGenerate] = [];
+            }
+            map[subjectToGenerate].push(...generated);
+            localStorage.setItem("anbk_questions_map", JSON.stringify(map));
+
+            // Ensure subject list exists in local storage
+            const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+            let localSubjectsList: string[] = [];
+            if (localSubjectsRaw) {
+              try {
+                localSubjectsList = JSON.parse(localSubjectsRaw);
+              } catch (_) {}
+            }
+            if (!Array.isArray(localSubjectsList)) {
+              localSubjectsList = [];
+            }
+            if (!localSubjectsList.includes(subjectToGenerate)) {
+              localSubjectsList.push(subjectToGenerate);
+              localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjectsList));
+            }
             setSubjectsList(localSubjectsList);
-          }
 
-          setPdfFile(null);
-          setPdfGenMessage(`✅ Sukses (Mode Offline/GitHub Pages): Berhasil memproses dokumen "${pdfFile.name}" secara adaptif! Sebanyak ${count} butir soal baru telah ditambahkan ke bank soal mata pelajaran "${subjectToGenerate}".`);
+            setPdfFile(null);
+            setPdfGenMessage(`✅ Sukses (Mode Offline/GitHub Pages): Berhasil memproses dokumen "${pdfFile.name}" secara adaptif! Sebanyak ${count} butir soal baru telah ditambahkan ke bank soal mata pelajaran "${subjectToGenerate}".`);
+            setIsGeneratingPdf(false);
+          }
+        } catch (err: any) {
+          console.error("Kesalahan ketika memproses dokumen di dalam onload:", err);
+          setPdfGenMessage(`❌ Terjadi error lokal saat memproses: ${err.message}`);
           setIsGeneratingPdf(false);
         }
       };
