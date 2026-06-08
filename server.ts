@@ -1032,6 +1032,30 @@ async function startServer() {
     res.json({ success: true, message: "Butir soal berhasil dihapus." });
   });
 
+  // Delete all questions in a subject bank (optionally for a specific classroom)
+  app.post("/api/questions/delete-all", (req, res) => {
+    const { subject, kelas } = req.body;
+    if (!subject) {
+      return res.status(400).json({ error: "Parameter mata pelajaran diperlukan." });
+    }
+
+    const existing = defaultQuestions[subject];
+    if (!existing) {
+      return res.status(404).json({ error: "Mata pelajaran tidak ditemukan." });
+    }
+
+    if (kelas && kelas !== "Semua Kelas") {
+      // Keep only questions that don't match this class program
+      defaultQuestions[subject] = existing.filter(q => q.kelas && q.kelas !== "Semua Kelas" && q.kelas !== kelas);
+    } else {
+      // Clear all
+      defaultQuestions[subject] = [];
+    }
+
+    saveDatabase();
+    res.json({ success: true, message: "Semua soal berhasil dihapus." });
+  });
+
   // Generate questions from document/PDF base64 and extract using Gemini
   app.post("/api/generate-from-pdf", async (req, res) => {
     const { subject, fileBase64, mimeType, kelas, count } = req.body;
