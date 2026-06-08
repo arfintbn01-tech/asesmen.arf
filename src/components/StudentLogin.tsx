@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ShieldCheck, User, Key, BookOpen, AlertCircle, Layers } from "lucide-react";
+import { ShieldCheck, User, Key, BookOpen, AlertCircle, Layers, ChevronDown } from "lucide-react";
 
 interface StudentLoginProps {
   examToken: string;
@@ -224,9 +224,9 @@ export default function StudentLogin({
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Input Nama */}
             <div>
-              <label htmlFor="student-name" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Nama Lengkap Siswa</label>
+              <label htmlFor="student-name" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5 font-sans">Nama Lengkap Siswa</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
                 <input
                   id="student-name"
                   type="text"
@@ -261,12 +261,12 @@ export default function StudentLogin({
             <div>
               <label htmlFor="student-kelas" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5 font-sans">Kelas / Rombel</label>
               <div className="relative">
-                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
                 <select
                   id="student-kelas"
                   value={kelas}
                   onChange={(e) => setKelas(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition appearance-none cursor-pointer"
+                  className="w-full pl-10 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition appearance-none cursor-pointer"
                 >
                   <option value="X Keperawatan">X Keperawatan</option>
                   <option value="X NKPI">X NKPI</option>
@@ -275,19 +275,20 @@ export default function StudentLogin({
                   <option value="XII Keperawatan">XII Keperawatan</option>
                   <option value="XII NKPI">XII NKPI</option>
                 </select>
+                <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               </div>
             </div>
 
             {/* Select Mata Pelajaran */}
             <div>
-              <label htmlFor="student-subject" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Mata Ujian yang Diikuti</label>
+              <label htmlFor="student-subject" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5 font-sans">Mata Ujian yang Diikuti</label>
               <div className="relative">
-                <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
                 <select
                   id="student-subject"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition appearance-none cursor-pointer"
+                  className="w-full pl-10 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition appearance-none cursor-pointer"
                 >
                   {subjects.map((sub) => (
                     <option key={sub} value={sub}>
@@ -295,14 +296,15 @@ export default function StudentLogin({
                     </option>
                   ))}
                 </select>
+                <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               </div>
             </div>
 
             {/* Input Token */}
             <div>
-              <label htmlFor="student-token" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Token Ujian (Rilis dari Pengawas)</label>
+              <label htmlFor="student-token" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5 font-sans">Token Ujian (Rilis dari Pengawas)</label>
               <div className="relative">
-                <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
                 <input
                   id="student-token"
                   type="text"

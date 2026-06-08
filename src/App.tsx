@@ -151,6 +151,24 @@ function ActiveSubjectQuestionsPreview({ subject, refreshEvent, onQuestionsChang
       }
     } catch (err) {
       console.error(err);
+      console.warn("Gagal menyambung ke server, memproses secara lokal...");
+      const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+      if (localQuestionsRaw) {
+        try {
+          const map = JSON.parse(localQuestionsRaw);
+          if (map[subject] && Array.isArray(map[subject])) {
+            map[subject] = map[subject].map((q: Question) => q.id === editForm.id ? { ...q, ...editForm } : q);
+            localStorage.setItem("anbk_questions_map", JSON.stringify(map));
+            setEditingQuestionId(null);
+            setEditForm({});
+            loadQuestions();
+            onQuestionsChanged?.();
+            return;
+          }
+        } catch (e) {
+          console.error("Local edit fallback failed:", e);
+        }
+      }
       setErrorBanner("Gagal memperbarui soal karena gangguan koneksi.");
     }
   };
@@ -175,6 +193,23 @@ function ActiveSubjectQuestionsPreview({ subject, refreshEvent, onQuestionsChang
       }
     } catch (err) {
       console.error(err);
+      console.warn("Gagal menyambung ke server, menghapus secara lokal...");
+      const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+      if (localQuestionsRaw) {
+        try {
+          const map = JSON.parse(localQuestionsRaw);
+          if (map[subject] && Array.isArray(map[subject])) {
+            map[subject] = map[subject].filter((q: Question) => q.id !== qId);
+            localStorage.setItem("anbk_questions_map", JSON.stringify(map));
+            setDeletingQuestionId(null);
+            loadQuestions();
+            onQuestionsChanged?.();
+            return;
+          }
+        } catch (e) {
+          console.error("Local delete fallback failed:", e);
+        }
+      }
       setErrorBanner("Gagal menghapus soal karena gangguan koneksi.");
     }
   };
@@ -1107,19 +1142,156 @@ export default function App() {
     // Fallback for static hosts (GitHub Pages, Vercel SPA) if server fetch fails or is not ok
     if (!success) {
       const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
-      if (localSubjectsRaw) {
+      const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+      const defaults = [
+        "Literasi Bahasa Indonesia",
+        "Numerasi (Matematika)"
+      ];
+
+      // Seed questions map statically if not present in client localStorage map
+      if (!localQuestionsRaw) {
+        const fallbackDefaultQuestions: Record<string, Question[]> = {
+          "Literasi Bahasa Indonesia": [
+            {
+              id: "lit_q1",
+              type: "pilihan_ganda",
+              stimulus: "Rasa bangga sebagai bangsa Indonesia merupakan bagian dari perwujudan bela negara. Bela negara bukan sekadar memanggul senjata dalam pertempuran fisik, melainkan juga melestarikan kebudayaan lokal, mencintai produk dalam negeri, dan menjaga keharmonisan keberagaman suku bangsa. Generasi muda memegang kunci keberlanjutan nilai integritas nasional dalam dunia digital global.",
+              questionText: "Berdasarkan kutipan wacana di atas, apa perwujudan bela negara yang paling tepat bagi generasi muda dalam kehidupan sehari-hari?",
+              options: [
+                "A. Selalu siap memanggul senjata untuk berperang secara fisik.",
+                "B. Melestarikan budaya lokal, menghargai keberagaman, dan bangga memakai produk Indonesia.",
+                "C. Membatasi diri dari pergaulan dunia luar dan kemajuan teknologi digital global.",
+                "D. Memfokuskan diri hanya pada peningkatan ekonomi pribadi tanpa memikirkan budaya lokal."
+              ],
+              correctAnswer: "B. Melestarikan budaya lokal, menghargai keberagaman, dan bangga memakai produk Indonesia.",
+              points: 10
+            },
+            {
+              id: "lit_q2",
+              type: "pilihan_ganda_kompleks",
+              stimulus: "Sistem Informasi Geografis (SIG) telah merevolusi cara pemetaan lingkungan hidup di Indonesia. Melalui pemantauan satelit real-time, kementerian terkait dapat mendeteksi titik panas kebakaran hutan secara dini sebelum meluas. Keberhasilan sistem ini bergantung pada kecepatan data telemetri yang dikirimkan ke satelit.",
+              questionText: "Manakah pernyataan yang sesuai mengenai keunggulan SIG berdasarkan teks tersebut? (Pilih semua yang benar)",
+              options: [
+                "A. SIG membantu mendeteksi titik kebakaran hutan secara dini.",
+                "B. Keberhasilan SIG sangat dipengaruhi oleh kecepatan transfer data telemetri.",
+                "C. Pemetaan hanya bisa dilakukan secara konvensional tanpa satelit.",
+                "D. SIG secara otomatis memadamkan api kebakaran hutan tanpa petugas."
+              ],
+              correctAnswer: ["A. SIG membantu mendeteksi titik kebakaran hutan secara dini.", "B. Keberhasilan SIG sangat dipengaruhi oleh kecepatan transfer data telemetri."],
+              points: 10
+            },
+            {
+              id: "lit_q3",
+              type: "menjodohkan",
+              stimulus: "Dua tokoh sastra Indonesia terkemuka memiliki karakteristik karya yang sangat khas. Chairil Anwar terkenal dengan puisi-puisinya yang ekspresif, mendobrak batasan, bertemakan perjuangan individu. Pramoedya Ananta Toer terkenal dengan novel realisme sosial berlatar sejarah perjuangan nasional melawan kolonialisme.",
+              questionText: "Jodohkanlah sastrawan dengan fokus atau tema utama dari karya sastra mereka yang tepat.",
+              matchingPairs: [
+                { left: "Chairil Anwar", right: ["Puisi ekspresif & perjuangan individu", "Novel realisme sosial & sejarah kolonial", "Drama musikal modern"] },
+                { left: "Pramoedya Ananta Toer", right: ["Puisi ekspresif & perjuangan individu", "Novel realisme sosial & sejarah kolonial", "Drama musikal modern"] }
+              ],
+              correctMatching: {
+                "Chairil Anwar": "Puisi ekspresif & perjuangan individu",
+                "Pramoedya Ananta Toer": "Novel realisme sosial & sejarah kolonial"
+              },
+              points: 15
+            },
+            {
+              id: "lit_q4",
+              type: "isian_singkat",
+              stimulus: "Menurut pepatah lama 'Hemat pangkal kaya, rajin pangkal pandai'. Pendidikan di sekolah dasar menekankan pentingnya pembentukan karakter kejujuran dan kerja keras sejak usia dini sehingga kelak melahirkan generasi berintegritas.",
+              questionText: "Melalui pepatah tersebut, nilai rajin melahirkan pribadi yang... (Jawaban singkat: satu kata)",
+              correctAnswer: "pandai",
+              points: 10
+            },
+            {
+              id: "lit_q5",
+              type: "uraian",
+              stimulus: "Dunia digital membawa peluang sekaligus tantangan moral yang besar. Penyebaran hoaks dan kecurangan akademik semakin mudah dilakukan dengan bantuan AI. Integritas diri menjadi satu-satunya pelindung moral dari kepalsuan informasi.",
+              questionText: "Bagaimana tanggapan Anda mengenai pentingnya menjaga rekam integritas di era serba digital ini? Jelaskan argumen logis Anda.",
+              correctAnswer: "",
+              points: 10
+            }
+          ],
+          "Numerasi (Matematika)": [
+            {
+              id: "num_q1",
+              type: "pilihan_ganda",
+              stimulus: "Toko Kelontong Berkah melayani pembelian beras dalam kantong 5 kg dan 10 kg. Harga beras kemasan 5 kg adalah Rp65.000,00 sedangkan kemasan 10 kg adalah Rp125.000,00. Ibu Retno ingin membeli total 25 kg beras untuk kebutuhan arisan.",
+              questionText: "Manakah kombinasi pembelian di bawah ini yang paling hemat bagi Ibu Retno?",
+              options: [
+                "A. Membeli 5 kantong kemasan 5 kg.",
+                "B. Membeli 2 kantong kemasan 10 kg dan 1 kantong kemasan 5 kg.",
+                "C. Membeli 3 kantong kemasan 10 kg.",
+                "D. Membeli 1 kantong kemasan 10 kg dan 3 kantong kemasan 5 kg."
+              ],
+              correctAnswer: "B. Membeli 2 kantong kemasan 10 kg dan 1 kantong kemasan 5 kg.",
+              points: 10
+            },
+            {
+              id: "num_q2",
+              type: "pilihan_ganda_kompleks",
+              stimulus: "Suatu pabrik roti memproduksi roti manis dengan fungsi biaya produksi bulanan C(x) = x^2 - 10x + 50 (dalam jutaan rupiah), di mana x adalah jumlah paket roti manis yang terjual (dalam ribu paket). Keuntungan maksimal akan diperoleh pada titik balik kurva tersebut.",
+              questionText: "Pernyataan mana saja yang tepat dari data di atas? (Pilih semua yang benar)",
+              options: [
+                "A. Sumbu simetri x koordinat biaya terkecil terletak di x = 5 ribu paket.",
+                "B. Jika tidak memproduksi roti sama sekali (x=0), perusahaan tetap menanggung biaya tetap sebesar 50 juta rupiah.",
+                "C. Keuntungan akan selalu naik seiring bertambahnya x tanpa batas maksimum.",
+                "D. Biaya minimum tercapai pada x = 10 ribu paket roti."
+              ],
+              correctAnswer: ["A. Sumbu simetri x koordinat biaya terkecil terletak di x = 5 ribu paket.", "B. Jika tidak memproduksi roti sama sekali (x=0), perusahaan tetap menanggung biaya tetap sebesar 50 juta rupiah."],
+              points: 10
+            },
+            {
+              id: "num_q3",
+              type: "menjodohkan",
+              stimulus: "Berikut adalah rumus-rumus bangun ruang sisi lengkung yang penting dalam perhitungan volume tangki industri: Volume Tabung (V = pi * r^2 * h), Volume Kerucut (V = 1/3 * pi * r^2 * h), dan Volume Bola (V = 4/3 * pi * r^3).",
+              questionText: "Jodohkanlah bangun ruang dengan rumus volumenya yang tepat.",
+              matchingPairs: [
+                { left: "Tabung", right: ["pi * r^2 * h", "1/3 * pi * r^2 * h", "4/3 * pi * r^3"] },
+                { left: "Kerucut", right: ["pi * r^2 * h", "1/3 * pi * r^2 * h", "4/3 * pi * r^3"] }
+              ],
+              correctMatching: {
+                "Tabung": "pi * r^2 * h",
+                "Kerucut": "1/3 * pi * r^2 * h"
+              },
+              points: 15
+            },
+            {
+              id: "num_q4",
+              type: "isian_singkat",
+              stimulus: "Sebuah barisan aritmetika memiliki suku pertama a = 3 dan beda b = 4. Kita ingin mengetahui suku ke-5 barisan tersebut.",
+              questionText: "Nilai suku ke-5 (U5) barisan tersebut adalah...",
+              correctAnswer: "19",
+              points: 10
+            },
+            {
+              id: "num_q5",
+              type: "uraian",
+              stimulus: "Penyebaran bakteri patogen dalam air limbah meningkat dua kali lipat setiap 10 menit (pertumbuhan eksponensial). Jumlah awal bakteri terukur adalah 50 sel.",
+              questionText: "Tuliskan model matematika pertumbuhan jumlah bakteri (N) setelah waktu t menit, dan hitung jumlah bakteri pada t = 30 menit.",
+              correctAnswer: "",
+              points: 10
+            }
+          ]
+        };
+        localStorage.setItem("anbk_questions_map", JSON.stringify(fallbackDefaultQuestions));
+      }
+
+      if (!localSubjectsRaw) {
+        localStorage.setItem("anbk_subjects_list", JSON.stringify(defaults));
+        setSubjectsList(defaults);
+      } else {
         try {
           const localSubjects: string[] = JSON.parse(localSubjectsRaw);
           if (Array.isArray(localSubjects) && localSubjects.length > 0) {
-            // Merge with local standard defaults
-            const defaults = [
-              "Literasi Bahasa Indonesia",
-              "Numerasi (Matematika)"
-            ];
             const merged = Array.from(new Set([...defaults, ...localSubjects]));
             setSubjectsList(merged);
+          } else {
+            setSubjectsList(defaults);
           }
-        } catch (_) {}
+        } catch (_) {
+          setSubjectsList(defaults);
+        }
       }
     }
   };
@@ -3146,7 +3318,54 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
         alert(`Gagal menyimpan: ${data.error}`);
       }
     } catch (err: any) {
-      alert(`Kesalahan server: ${err.message}`);
+      console.warn("Gagal menghubungi server untuk menyimpan soal manual, menggunakan penyimpanan lokal:", err.message);
+      
+      const localQuestionsRaw = localStorage.getItem("anbk_questions_map") || "{}";
+      try {
+        const localQuestions = JSON.parse(localQuestionsRaw);
+        if (!localQuestions[subjectToGenerate]) {
+          localQuestions[subjectToGenerate] = [];
+        }
+        
+        const preparedQuestions = manualQuestionsList.map(q => ({
+          ...q,
+          kelas: q.kelas || generatorTargetKelas
+        }));
+
+        localQuestions[subjectToGenerate].push(...preparedQuestions);
+        localStorage.setItem("anbk_questions_map", JSON.stringify(localQuestions));
+
+        const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+        let localSubjectsList: string[] = [];
+        if (localSubjectsRaw) {
+          try {
+            localSubjectsList = JSON.parse(localSubjectsRaw);
+          } catch (_) {}
+        }
+        if (!Array.isArray(localSubjectsList)) {
+          localSubjectsList = [];
+        }
+        if (!localSubjectsList.includes(subjectToGenerate)) {
+          localSubjectsList.push(subjectToGenerate);
+          localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjectsList));
+        }
+
+        setSubjectsList(localSubjectsList);
+        setManualQuestionsList([]);
+        setManualStimulus("");
+        setManualQuestionText("");
+        setManualOptionA("");
+        setManualOptionB("");
+        setManualOptionC("");
+        setManualOptionD("");
+        setManualCorrect("");
+        
+        alert(`Berhasil menyimpan ${preparedQuestions.length} butir soal secara lokal (Mode Offline/GitHub Pages)!`);
+        await syncLocalAndServerData();
+      } catch (e: any) {
+        console.error("Local save manual fallback failed:", e);
+        alert(`Kesalahan server: ${err.message}`);
+      }
     }
   };
 
