@@ -42,18 +42,90 @@ export default function StudentLogin({
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, nisn, token, subject, kelas }),
-      });
+      let loginSuccess = false;
+      let studentResult: any = null;
+      let errMsg = "";
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Gagal masuk ke sesi ujian.");
+      try {
+        const response = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, nisn, token, subject, kelas }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          loginSuccess = true;
+          studentResult = data.student;
+        } else {
+          const data = await response.json();
+          errMsg = data.error || "Gagal masuk ke sesi ujian.";
+        }
+      } catch (err: any) {
+        console.warn("Gagal menghubungi server untuk login, mencoba fallback lokal:", err.message);
       }
 
-      onLoginSuccess(data.student);
+      if (!loginSuccess) {
+        // Local/Static Fallback Login Logic
+        if (token.trim().toUpperCase() !== examToken.trim().toUpperCase()) {
+          throw new Error(errMsg || "Token ujian salah atau tidak valid. Silakan hubungi pengawas ujian.");
+        }
+
+        const localStudentsRaw = localStorage.getItem("anbk_students");
+        let localStudents: any[] = [];
+        if (localStudentsRaw) {
+          try {
+            localStudents = JSON.parse(localStudentsRaw);
+          } catch (_) {}
+        }
+
+        let targetStudent = localStudents.find((s: any) => s.nisn === nisn.trim());
+        if (!targetStudent) {
+          // Auto-create a student record if not existing in local disk
+          const id = "siswa_" + Date.now();
+          targetStudent = {
+            id,
+            name: name.trim(),
+            nisn: nisn.trim(),
+            status: "idle",
+            kelas: kelas || "X Keperawatan",
+            trustScore: 100,
+            violationsCount: 0,
+            violations: []
+          };
+          localStudents.push(targetStudent);
+        } else {
+          if (kelas) {
+            targetStudent.kelas = kelas;
+          }
+        }
+
+        if (targetStudent.status === "locked") {
+          throw new Error("Akun Anda berstatus TERKUNCI karena terdeteksi melakukan pelanggaran. Mintalah pengawas untuk membuka kunci terlebih dahulu.");
+        }
+
+        // Initialize active student run
+        targetStudent.status = "in_exam";
+        targetStudent.subject = subject;
+        targetStudent.startTime = new Date().toISOString();
+        targetStudent.trustScore = 100;
+        targetStudent.violationsCount = 0;
+        targetStudent.violations = [];
+        targetStudent.answers = {};
+        targetStudent.aiReport = undefined;
+        targetStudent.submittedAt = undefined;
+
+        // Save back
+        localStorage.setItem("anbk_students", JSON.stringify(localStudents));
+        studentResult = targetStudent;
+        loginSuccess = true;
+      }
+
+      if (studentResult) {
+        onLoginSuccess(studentResult);
+      } else {
+        throw new Error("Gagal memproses pendaftaran siswa.");
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {

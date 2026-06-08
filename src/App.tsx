@@ -489,8 +489,89 @@ export default function App() {
 
   // Global Dashboard Statuses (Shared via polling)
   const [token, setToken] = useState(() => localStorage.getItem("anbk_exam_token") || "ANBK99");
-  const [students, setStudents] = useState<Student[]>([]);
-  const [violationLogs, setViolationLogs] = useState<ViolationLog[]>([]);
+  const [students, setStudents] = useState<Student[]>(() => {
+    const local = localStorage.getItem("anbk_students");
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (_) {}
+    }
+    const defaults = [
+      {
+        id: "siswa1",
+        name: "Ardiansyah Pratama",
+        nisn: "0082415123",
+        status: "idle" as const,
+        kelas: "X Keperawatan",
+        trustScore: 100,
+        violationsCount: 0,
+        violations: [],
+      },
+      {
+        id: "siswa2",
+        name: "Aisyah Putri Rahayu",
+        nisn: "0095123441",
+        status: "idle" as const,
+        kelas: "X NKPI",
+        trustScore: 100,
+        violationsCount: 0,
+        violations: [],
+      },
+      {
+        id: "siswa3",
+        name: "Bagus Tri Laksono",
+        nisn: "0083112211",
+        status: "idle" as const,
+        kelas: "XI Keperawatan",
+        trustScore: 100,
+        violationsCount: 0,
+        violations: [],
+      },
+      {
+        id: "siswa4",
+        name: "Cantika Dwi Lestari",
+        nisn: "0091223344",
+        status: "idle" as const,
+        kelas: "XI NKPI",
+        trustScore: 100,
+        violationsCount: 0,
+        violations: [],
+      },
+      {
+        id: "siswa5",
+        name: "Dito Danuarta",
+        nisn: "0071334455",
+        status: "idle" as const,
+        kelas: "XII Keperawatan",
+        trustScore: 100,
+        violationsCount: 0,
+        violations: [],
+      },
+      {
+        id: "siswa6",
+        name: "Elina Salsabila",
+        nisn: "0072445566",
+        status: "idle" as const,
+        kelas: "XII NKPI",
+        trustScore: 100,
+        violationsCount: 0,
+        violations: [],
+      }
+    ];
+    localStorage.setItem("anbk_students", JSON.stringify(defaults));
+    return defaults;
+  });
+  const [violationLogs, setViolationLogs] = useState<ViolationLog[]>(() => {
+    const local = localStorage.getItem("anbk_violation_logs");
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (_) {}
+    }
+    return [];
+  });
   const [examStartTime, setExamStartTime] = useState(() => localStorage.getItem("anbk_exam_start_time") || "");
   const [examEndTime, setExamEndTime] = useState(() => localStorage.getItem("anbk_exam_end_time") || "");
 
@@ -726,7 +807,9 @@ export default function App() {
           }
         }
         setStudents(data.students);
+        localStorage.setItem("anbk_students", JSON.stringify(data.students));
         setViolationLogs(data.violationLogs);
+        localStorage.setItem("anbk_violation_logs", JSON.stringify(data.violationLogs));
         if (data.examStartTime !== undefined && data.examStartTime !== "") {
           setExamStartTime(data.examStartTime);
           localStorage.setItem("anbk_exam_start_time", data.examStartTime);
@@ -768,6 +851,35 @@ export default function App() {
       if (localEnd) {
         setExamEndTime(localEnd);
         setInputEndTime(localEnd);
+      }
+      const localStudentsRaw = localStorage.getItem("anbk_students");
+      if (localStudentsRaw) {
+        try {
+          const localStudents = JSON.parse(localStudentsRaw);
+          if (Array.isArray(localStudents)) {
+            setStudents(localStudents);
+            if (currentSiswa) {
+              const synced = localStudents.find((s: Student) => s.id === currentSiswa.id);
+              if (synced) {
+                setCurrentSiswa(synced);
+                if (synced.status === "locked") {
+                  setIsLockedBySystem(true);
+                } else if (synced.status === "in_exam" && isLockedBySystem) {
+                  setIsLockedBySystem(false);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+      const localViolationLogsRaw = localStorage.getItem("anbk_violation_logs");
+      if (localViolationLogsRaw) {
+        try {
+          const localLogs = JSON.parse(localViolationLogsRaw);
+          if (Array.isArray(localLogs)) {
+            setViolationLogs(localLogs);
+          }
+        } catch (_) {}
       }
     }
   };
@@ -1159,6 +1271,7 @@ export default function App() {
   // Send a violation update to backend
   const reportViolation = async (type: string, description: string) => {
     if (!currentSiswa) return;
+    let success = false;
     try {
       const res = await fetch("/api/violation", {
         method: "POST",
@@ -1171,6 +1284,7 @@ export default function App() {
       });
 
       if (res.ok) {
+        success = true;
         const data = await res.json();
         setCurrentSiswa(data.student);
         if (data.student.status === "locked") {
@@ -1179,7 +1293,92 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error("Gagal mengirim log pelanggaran:", err);
+      console.warn("Gagal mengirim log pelanggaran ke server (non-fatal):", err);
+    }
+
+    if (!success) {
+      // Offline/GitHub Pages fallback: Save in LocalStorage
+      const localStudentsRaw = localStorage.getItem("anbk_students");
+      let currentList: Student[] = [];
+      if (localStudentsRaw) {
+        try {
+          currentList = JSON.parse(localStudentsRaw);
+        } catch (_) {}
+      }
+
+      let updatedStudent: Student | null = null;
+      const updatedList = currentList.map(s => {
+        if (s.id === currentSiswa.id) {
+          let deduction = 10;
+          if (type === "BACKEND_ESCAPE_FULLSCREEN") deduction = 20;
+          if (type === "TAB_SWITCH" || type === "BLUR_WINDOW") deduction = 15;
+          if (type === "DEVTOOLS_OPEN") deduction = 35;
+          if (type === "BLOCKED_SHORTCUT" || type === "COPY_PASTE") deduction = 8;
+          if (type === "FACE_LOST") deduction = 10;
+
+          const nextTrust = Math.max(0, s.trustScore - deduction);
+          const nextViolations = s.violationsCount + 1;
+          const violationObj = {
+            type,
+            description,
+            timestamp: new Date().toISOString()
+          };
+
+          const nextViolationsList = [...s.violations, violationObj];
+          let nextStatus: "idle" | "in_exam" | "locked" | "completed" = s.status;
+
+          // Check for auto lock
+          if (nextTrust <= 20 || nextViolations >= 5) {
+            nextStatus = "locked";
+            nextViolationsList.push({
+              type: "AUTO_LOCK_SUSPEND",
+              description: "Sistem mengunci otomatis ujian karena melampaui batas toleransi pelanggaran.",
+              timestamp: new Date().toISOString()
+            });
+          }
+
+          updatedStudent = {
+            ...s,
+            trustScore: nextTrust,
+            violationsCount: nextViolations,
+            violations: nextViolationsList,
+            status: nextStatus
+          };
+          return updatedStudent;
+        }
+        return s;
+      });
+
+      localStorage.setItem("anbk_students", JSON.stringify(updatedList));
+      setStudents(updatedList);
+
+      if (updatedStudent) {
+        setCurrentSiswa(updatedStudent);
+        if ((updatedStudent as Student).status === "locked") {
+          setIsLockedBySystem(true);
+          setSystemLockReason("Batas maksimum toleransi kecurangan terlampaui. Ujian Anda dikunci oleh AI Proctor.");
+        }
+
+        // Add to global violation logs in local storage
+        const localLogsRaw = localStorage.getItem("anbk_violation_logs") || "[]";
+        let localLogs = [];
+        try {
+          localLogs = JSON.parse(localLogsRaw);
+        } catch (_) {}
+
+        const globalLog = {
+          id: "v_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+          studentId: currentSiswa.id,
+          studentName: currentSiswa.name,
+          type,
+          description,
+          timestamp: new Date().toISOString()
+        };
+
+        const updatedLogs = [globalLog, ...localLogs];
+        localStorage.setItem("anbk_violation_logs", JSON.stringify(updatedLogs));
+        setViolationLogs(updatedLogs);
+      }
     }
   };
 
@@ -1196,6 +1395,7 @@ export default function App() {
 
     setIsExamStarted(false);
 
+    let success = false;
     try {
       const res = await fetch("/api/submit-exam", {
         method: "POST",
@@ -1208,12 +1408,153 @@ export default function App() {
       });
 
       if (res.ok) {
+        success = true;
         const data = await res.json();
         setCurrentSiswa(data.student);
         setActiveRole("siswa"); // return safely
       }
     } catch (err) {
-      console.error("Gagal mengumpulkan lembar jawaban:", err);
+      console.warn("Gagal mengumpulkan lembar jawaban ke server (non-fatal):", err);
+    }
+
+    if (!success) {
+      // Local/Static Fallback Submission & Scoring Logic
+      const localStudentsRaw = localStorage.getItem("anbk_students");
+      let currentList: Student[] = [...students];
+      if (localStudentsRaw) {
+        try {
+          currentList = JSON.parse(localStudentsRaw);
+        } catch (_) {}
+      }
+
+      let updatedStudent: Student | null = null;
+      
+      // Calculate score and evaluation
+      let totalPoints = 0;
+      let earnedPoints = 0;
+      let correctCount = 0;
+
+      // Find local questions
+      const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+      let subjectQuestions: Question[] = [];
+      if (localQuestionsRaw) {
+        try {
+          const map = JSON.parse(localQuestionsRaw);
+          subjectQuestions = map[currentSiswa.subject || ""] || [];
+        } catch (_) {}
+      }
+      if (subjectQuestions.length === 0) {
+        subjectQuestions = [...questions];
+      }
+
+      subjectQuestions.forEach(q => {
+        const qPoints = q.points || 10;
+        totalPoints += qPoints;
+
+        const studentAns = answers ? answers[q.id] : undefined;
+        if (studentAns === undefined || studentAns === null) {
+          return;
+        }
+
+        let isCorrect = false;
+
+        if (q.type === "pilihan_ganda") {
+          if (typeof studentAns === "string" && typeof q.correctAnswer === "string") {
+            if (studentAns.trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) {
+              isCorrect = true;
+            }
+          }
+        } else if (q.type === "pilihan_ganda_kompleks") {
+          if (Array.isArray(studentAns) && Array.isArray(q.correctAnswer)) {
+            const sortedStudent = [...studentAns].map(s => s.trim().toLowerCase()).sort();
+            const sortedCorrect = [...q.correctAnswer].map(s => s.trim().toLowerCase()).sort();
+            if (JSON.stringify(sortedStudent) === JSON.stringify(sortedCorrect)) {
+              isCorrect = true;
+            }
+          } else if (Array.isArray(studentAns) && typeof q.correctAnswer === "string") {
+            if (studentAns.length === 1 && studentAns[0].trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()) {
+              isCorrect = true;
+            }
+          }
+        } else if (q.type === "isian_singkat") {
+          if (typeof studentAns === "string" && q.correctAnswer) {
+            const correctAnswers = Array.isArray(q.correctAnswer)
+              ? q.correctAnswer.map(ans => ans.trim().toLowerCase())
+              : [String(q.correctAnswer).trim().toLowerCase()];
+            if (correctAnswers.includes(studentAns.trim().toLowerCase())) {
+              isCorrect = true;
+            }
+          }
+        } else if (q.type === "menjodohkan") {
+          if (typeof studentAns === "object" && studentAns !== null && q.correctMatching) {
+            let allCorrect = true;
+            const leftKeys = Object.keys(q.correctMatching);
+            if (leftKeys.length > 0) {
+              for (const key of leftKeys) {
+                if (String(studentAns[key] || "").trim().toLowerCase() !== String(q.correctMatching[key]).trim().toLowerCase()) {
+                  allCorrect = false;
+                  break;
+                }
+              }
+              if (allCorrect) isCorrect = true;
+            }
+          }
+        } else if (q.type === "uraian") {
+          if (typeof studentAns === "string" && studentAns.trim().length >= 5) {
+            isCorrect = true;
+          }
+        }
+
+        if (isCorrect) {
+          earnedPoints += qPoints;
+          correctCount++;
+        }
+      });
+
+      const finalScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
+      const totalCount = subjectQuestions.length;
+
+      let statusAnalysis = "Aman";
+      if (currentSiswa.trustScore < 50) statusAnalysis = "Curang Beruntun";
+      else if (currentSiswa.trustScore < 90) statusAnalysis = "Waspada";
+
+      const localAiReport = `### LAPORAN EVALUASI PENGAWAS OTOMATIS (FALLBACK CLIENT)
+*Kunci API Gemini tidak aktif/tidak dikonfigurasi dalam mode luring, analisis dilakukan menggunakan algoritme lokal kami.*
+
+- **Siswa**: ${currentSiswa.name} (${currentSiswa.nisn})
+- **Status Akhir Integritas**: **${statusAnalysis}** (${currentSiswa.trustScore}%)
+- **Jumlah Pelanggaran Telemetri**: ${currentSiswa.violationsCount} kali.
+
+**Analisis Pelanggaran:**
+Siswa melakukan total ${currentSiswa.violationsCount} aktivitas yang dinilai melanggar protokol keamanan ANBK. Nilai kredibilitas kelulusannya berada pada level **${statusAnalysis === 'Aman' ? 'Sangat Tinggi' : statusAnalysis === 'Waspada' ? 'Sedang (Perlu Verifikasi)' : 'Rendah (Indikasi Curang Kuat)'}**.
+
+**Rekomendasi untuk Sekolah:**
+${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi orang tua siswa terkait rekam kecurangan di sistem." : "1. Disahkan hasil ujiannya.\\n2. Berikan apresiasi atas integritas pengerjaannya."}`;
+
+      const updatedList = currentList.map(s => {
+        if (s.id === currentSiswa.id) {
+          updatedStudent = {
+            ...s,
+            status: "completed" as const,
+            answers,
+            submittedAt: new Date().toISOString(),
+            score: finalScore,
+            correctCount,
+            totalCount,
+            aiReport: localAiReport
+          };
+          return updatedStudent;
+        }
+        return s;
+      });
+
+      localStorage.setItem("anbk_students", JSON.stringify(updatedList));
+      setStudents(updatedList);
+      if (updatedStudent) {
+        setCurrentSiswa(updatedStudent);
+      }
+      setActiveRole("siswa");
+      alert("Lembar jawaban berhasil dikirim dan dianalisis secara lokal (Mode Offline/GitHub Pages)!");
     }
   };
 
@@ -1286,6 +1627,7 @@ export default function App() {
 
   // Proctor Actions: Unlock a locked student
   const handleUnlockStudent = async (studentId: string) => {
+    let success = false;
     try {
       const res = await fetch("/api/unlock", {
         method: "POST",
@@ -1294,6 +1636,7 @@ export default function App() {
       });
 
       if (res.ok) {
+        success = true;
         const data = await res.json();
         if (selectedAuditStudent && selectedAuditStudent.id === studentId) {
           setSelectedAuditStudent(data.student);
@@ -1301,12 +1644,44 @@ export default function App() {
         refreshGlobalStatus();
       }
     } catch (err) {
-      console.error("Gagal membuka kunci siswa:", err);
+      console.warn("Gagal membuka kunci siswa di server (non-fatal):", err);
+    }
+
+    if (!success) {
+      // Fallback: unlock in local storage
+      const localStudentsRaw = localStorage.getItem("anbk_students");
+      let currentList: Student[] = [...students];
+      if (localStudentsRaw) {
+        try {
+          currentList = JSON.parse(localStudentsRaw);
+        } catch (_) {}
+      }
+
+      let updatedStudent: Student | null = null;
+      const updatedList = currentList.map(s => {
+        if (s.id === studentId) {
+          updatedStudent = {
+            ...s,
+            status: "in_exam",
+            trustScore: Math.max(s.trustScore, 50)
+          };
+          return updatedStudent;
+        }
+        return s;
+      });
+
+      localStorage.setItem("anbk_students", JSON.stringify(updatedList));
+      setStudents(updatedList);
+      if (selectedAuditStudent && selectedAuditStudent.id === studentId && updatedStudent) {
+        setSelectedAuditStudent(updatedStudent);
+      }
+      alert("Siswa berhasil dibuka kuncinya secara lokal (Mode Offline/GitHub Pages)!");
     }
   };
 
   // Proctor Actions: Lock a student manual force
   const handleLockStudentManual = async (studentId: string) => {
+    let success = false;
     try {
       const res = await fetch("/api/lock", {
         method: "POST",
@@ -1318,6 +1693,7 @@ export default function App() {
       });
 
       if (res.ok) {
+        success = true;
         const data = await res.json();
         if (selectedAuditStudent && selectedAuditStudent.id === studentId) {
           setSelectedAuditStudent(data.student);
@@ -1325,7 +1701,47 @@ export default function App() {
         refreshGlobalStatus();
       }
     } catch (err) {
-      console.error("Gagal mengunci siswa:", err);
+      console.warn("Gagal mengunci siswa di server (non-fatal):", err);
+    }
+
+    if (!success) {
+      // Fallback: lock in local storage
+      const localStudentsRaw = localStorage.getItem("anbk_students");
+      let currentList: Student[] = [...students];
+      if (localStudentsRaw) {
+        try {
+          currentList = JSON.parse(localStudentsRaw);
+        } catch (_) {}
+      }
+
+      let updatedStudent: Student | null = null;
+      const updatedList = currentList.map(s => {
+        if (s.id === studentId) {
+          updatedStudent = {
+            ...s,
+            status: "locked",
+            violations: [
+              ...s.violations,
+              {
+                type: "MANUAL_LOCK",
+                description: "Dikunci secara manual oleh Pengawas melalui Ruang Dashboard.",
+                timestamp: new Date().toISOString()
+              }
+            ],
+            violationsCount: s.violationsCount + 1,
+            trustScore: Math.max(s.trustScore - 20, 0)
+          };
+          return updatedStudent;
+        }
+        return s;
+      });
+
+      localStorage.setItem("anbk_students", JSON.stringify(updatedList));
+      setStudents(updatedList);
+      if (selectedAuditStudent && selectedAuditStudent.id === studentId && updatedStudent) {
+        setSelectedAuditStudent(updatedStudent);
+      }
+      alert("Siswa berhasil dikunci secara lokal (Mode Offline/GitHub Pages)!");
     }
   };
 
@@ -1333,21 +1749,46 @@ export default function App() {
   const handleResetSimulation = async () => {
     if (!window.confirm("Apakah Anda yakin ingin menyetel ulang (reset) data simulasi? Semua progres siswa dan log kecurangan akan dihapus.")) return;
 
+    let success = false;
     try {
       const res = await fetch("/api/reset", { method: "POST" });
       if (res.ok) {
+        success = true;
         localStorage.removeItem("anbk_exam_token");
         localStorage.removeItem("anbk_exam_start_time");
         localStorage.removeItem("anbk_exam_end_time");
+        localStorage.removeItem("anbk_students");
+        localStorage.removeItem("anbk_violation_logs");
         setCurrentSiswa(null);
         setIsExamStarted(false);
         setIsLockedBySystem(false);
         setSelectedAuditStudent(null);
-        alert("Seluruh data simulas berhasil diatur ulang!");
+        alert("Seluruh data simulasi berhasil diatur ulang!");
         refreshGlobalStatus();
       }
     } catch (err) {
-      console.error("Gagal mereset simulasi:", err);
+      console.warn("Gagal mereset simulasi di server (non-fatal):", err);
+    }
+
+    if (!success) {
+      // Offline/Static fallback
+      localStorage.removeItem("anbk_exam_token");
+      localStorage.removeItem("anbk_exam_start_time");
+      localStorage.removeItem("anbk_exam_end_time");
+      localStorage.removeItem("anbk_students");
+      localStorage.removeItem("anbk_violation_logs");
+      setCurrentSiswa(null);
+      setIsExamStarted(false);
+      setIsLockedBySystem(false);
+      setSelectedAuditStudent(null);
+      setToken("ANBK99");
+      setExamStartTime("");
+      setExamEndTime("");
+      setInputStartTime("");
+      setInputEndTime("");
+      setStudents([]);
+      setViolationLogs([]);
+      alert("Seluruh data simulasi berhasil diatur ulang secara lokal (Mode Offline/GitHub Pages)!");
     }
   };
 
@@ -1564,29 +2005,72 @@ export default function App() {
       alert("Nama dan NISN tidak boleh kosong!");
       return;
     }
+    const trimmedName = newStudentName.trim();
+    const trimmedNisn = newStudentNisn.trim();
+    let success = false;
     try {
       const res = await fetch("/api/students/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: newStudentName.trim(),
-          nisn: newStudentNisn.trim(),
+          name: trimmedName,
+          nisn: trimmedNisn,
           kelas: newStudentKelas,
           status: "idle"
         }),
       });
-      const data = await res.json();
       if (res.ok) {
-        alert(`Berhasil mendaftarkan siswa baru "${newStudentName.trim()}"!`);
+        success = true;
+        alert(`Berhasil mendaftarkan siswa baru "${trimmedName}"!`);
         setNewStudentName("");
         setNewStudentNisn("");
         setShowAddStudentForm(false);
         refreshGlobalStatus();
       } else {
+        const data = await res.json();
         alert(`Gagal mendaftarkan siswa: ${data.error}`);
+        return;
       }
     } catch (err: any) {
-      alert(`Gagal menghubungi server: ${err.message}`);
+      console.warn("Gagal mendaftarkan siswa ke server (non-fatal):", err.message);
+    }
+
+    if (!success) {
+      // Fallback: save to LocalStorage directly for static hosts/offline
+      const localStudentsRaw = localStorage.getItem("anbk_students");
+      let currentList: Student[] = [];
+      if (localStudentsRaw) {
+        try {
+          currentList = JSON.parse(localStudentsRaw);
+        } catch (_) {}
+      }
+
+      // Check for duplicate NISN
+      if (currentList.some(s => s.nisn === trimmedNisn)) {
+        alert(`Siswa dengan NISN ${trimmedNisn} sudah terdaftar!`);
+        return;
+      }
+
+      const newId = "siswa_" + Date.now();
+      const newSiswa: Student = {
+        id: newId,
+        name: trimmedName,
+        nisn: trimmedNisn,
+        status: "idle",
+        kelas: newStudentKelas,
+        trustScore: 100,
+        violationsCount: 0,
+        violations: []
+      };
+
+      const updatedList = [...currentList, newSiswa];
+      localStorage.setItem("anbk_students", JSON.stringify(updatedList));
+      setStudents(updatedList);
+
+      alert(`Berhasil mendaftarkan siswa baru "${trimmedName}" ke penyimpanan lokal (Mode Offline/GitHub Pages)!`);
+      setNewStudentName("");
+      setNewStudentNisn("");
+      setShowAddStudentForm(false);
     }
   };
 
@@ -1609,49 +2093,104 @@ export default function App() {
       alert("Nama dan NISN tidak boleh kosong!");
       return;
     }
+    const trimmedName = editSiswaName.trim();
+    const trimmedNisn = editSiswaNisn.trim();
+    let success = false;
     try {
       const res = await fetch("/api/students/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: editingSiswaId,
-          name: editSiswaName.trim(),
-          nisn: editSiswaNisn.trim(),
+          name: trimmedName,
+          nisn: trimmedNisn,
           kelas: editSiswaKelas
         })
       });
-      const data = await res.json();
       if (res.ok) {
+        success = true;
         alert("Data siswa berhasil diperbarui!");
         setEditingSiswaId(null);
         setEditSiswaName("");
         setEditSiswaNisn("");
         refreshGlobalStatus();
       } else {
+        const data = await res.json();
         alert(`Gagal memperbarui data siswa: ${data.error}`);
+        return;
       }
     } catch (err: any) {
-      alert(`Gagal memperbarui data siswa: ${err.message}`);
+      console.warn("Gagal memperbarui data siswa ke server (non-fatal):", err.message);
+    }
+
+    if (!success) {
+      // Fallback: edit in local storage
+      const localStudentsRaw = localStorage.getItem("anbk_students");
+      let currentList: Student[] = [...students];
+      if (localStudentsRaw) {
+        try {
+          currentList = JSON.parse(localStudentsRaw);
+        } catch (_) {}
+      }
+
+      const updatedList = currentList.map(s => {
+        if (s.id === editingSiswaId) {
+          return {
+            ...s,
+            name: trimmedName,
+            nisn: trimmedNisn,
+            kelas: editSiswaKelas
+          };
+        }
+        return s;
+      });
+
+      localStorage.setItem("anbk_students", JSON.stringify(updatedList));
+      setStudents(updatedList);
+      alert("Data siswa berhasil diperbarui di penyimpanan lokal (Mode Offline/GitHub Pages)!");
+      setEditingSiswaId(null);
+      setEditSiswaName("");
+      setEditSiswaNisn("");
     }
   };
 
   const handleDeleteSiswa = async (id: string) => {
+    let success = false;
     try {
       const res = await fetch("/api/students/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id })
       });
-      const data = await res.json();
       if (res.ok) {
+        success = true;
         alert("Siswa berhasil dihapus dari daftar!");
         setDeletingSiswaId(null);
         refreshGlobalStatus();
       } else {
+        const data = await res.json();
         alert(`Gagal menghapus siswa: ${data.error}`);
+        return;
       }
     } catch (err: any) {
-      alert(`Gagal menghubungi server: ${err.message}`);
+      console.warn("Gagal menghapus siswa di server (non-fatal):", err.message);
+    }
+
+    if (!success) {
+      // Fallback: delete in local storage
+      const localStudentsRaw = localStorage.getItem("anbk_students");
+      let currentList: Student[] = [...students];
+      if (localStudentsRaw) {
+        try {
+          currentList = JSON.parse(localStudentsRaw);
+        } catch (_) {}
+      }
+
+      const updatedList = currentList.filter(s => s.id !== id);
+      localStorage.setItem("anbk_students", JSON.stringify(updatedList));
+      setStudents(updatedList);
+      alert("Siswa berhasil dihapus dari daftar di penyimpanan lokal (Mode Offline/GitHub Pages)!");
+      setDeletingSiswaId(null);
     }
   };
 
