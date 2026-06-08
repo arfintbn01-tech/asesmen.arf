@@ -1076,45 +1076,47 @@ async function startServer() {
         }
       };
       
-      const prompt = `Anda adalah penyusun materi instrumen ujian nasional ANBK (Asesmen Nasional Berbasis Komputer) Kemendikbud-Ristek.
-Berikut adalah file materi referensi dokumen/PDF yang diunggah oleh pengawas.
-Tolong buatkan TEPAT ${targetCount} butir soal berkualitas tinggi berdasarkan isi materi dokumen terlampir untuk mata pelajaran: "${subject}".
-Tiap soal harus mengukur tingkat literasi mendalam atau numerasi analitis yang relevan dengan isi dokumen tersebut.
+      const prompt = `Anda adalah tim ahli pembuat soal instrumen ujian nasional ANBK (Asesmen Nasional Berbasis Komputer) di Asesmen Kompetensi Minimum (AKM) Kemendikbud-Ristek RI.
+Berikut telah dilampirkan dokumen referensi materi atau PDF rujukan yang diunggah oleh pengawas sekolah.
+Tolong buatkan TEPAT ${targetCount} butir soal ujian berkualitas tinggi dan berbobot akademis tinggi yang sepenuhnya bersandar pada isi materi dokumen tersebut untuk mata pelajaran: "${subject}".
 
-Persyaratan format:
-- Jumlah total soal yang dihasilkan HARUS TEPAT ${targetCount} butir.
-- Setiap soal harus menyertakan **STIMULUS**. Sediakan kutipan atau ringkasan stimulus cerita/data dari dokumen terlampir (minimal 3 kalimat).
-- Variasikan tipe soal secara berkala/seimbang di antara tiga tipe berikut:
-  1. "pilihan_ganda" (MCQ dengan 4 opsi A, B, C, D dan satu string correctAnswer berupa teks opsi lengkap yang dipilih, misal "A. ...").
-  2. "pilihan_ganda_kompleks" (Siswa dapat memilih lebih dari satu jawaban benar. Sediakan 4 opsi, dan correctAnswer berupa array berisi teks opsi-opsi yang benar, misal ["A. ...", "C. ..."]).
-  3. "isian_singkat" (Isian kata pendek yang ringkas, sertakan correctAnswer berupa string jawaban ringkasnya).
+Kriteria Kejelasan & Keselarasan Soal:
+1. **Sangat Spesifik & Relevan**: Soal HARUS menguji fakta spesifik, argumentasi, definisi konsep, data angka, atau korelasi nyata yang tertulis di dalam dokumen referensi. JANGAN pernah membuat soal umum atau menggunakan kalimat klise yang tidak ada hubungannya dengan isi spesifik dokumen.
+2. **Kualitas Bahasa**: Gunakan Bahasa Indonesia ragam baku, formal, jernih, dan sesuai dengan Ejaan Yang Disempurnakan (EYD). Kalimat pertanyaan tidak boleh ambigu atau membingungkan.
+3. **Penyusunan Stimulus**: Stimulus berupa paragraf utuh yang disalin atau dikutip secara akurat dari dokumen rujukan (minimal 3 kalimat). Harus menyajikan data konkret atau wacana literasi/numerasi yang utuh yang diperlukan siswa untuk bisa menjawab pertanyaan.
+4. **Penyusunan Pilihan Jawaban**:
+   - Untuk "pilihan_ganda": Buatlah 4 pilihan (A, B, C, D). Teks pilihan harus realistis, rapi, dan menghindari frasa petunjuk seperti "(fakta dokumen)". Berikan pengecoh (distractor) yang cerdas dan masuk akal, tetapi pastikan hanya ada SATU kunci jawaban yang benar-benar tepat.
+   - Untuk "pilihan_ganda_kompleks": Berikan 4 pilihan (A, B, C, D). Berikan minimal dua jawaban yang benar sebagai kunci jawaban (correctAnswer berupa array string).
+   - Untuk "isian_singkat": Pertanyaan harus menanyakan fakta eksplisit yang jawabannya berupa satu kata atau satu angka pendek yang pasti bersumber dari bacaan. JANGAN membuat isian yang membutuhkan deskripsi panjang.
 
-Format respons harus berupa JSON ARRAY dengan tepat ${targetCount} objek di dalamnya. Setiap objek harus memiliki properti persis seperti berikut (jangan sertakan teks pengantar apa-apa di luar JSON, langsung cetak array raw JSON):
+Jumlah total soal yang dihasilkan HARUS PERCIS ${targetCount} butir.
+
+Format respons wajib berupa RAW JSON ARRAY (tanpa pembungkus markdown, tanpa teks pembuka/penutup, langsung cetak array JSON):
 [
   {
     "id": "gen_pdf_1",
     "type": "pilihan_ganda",
-    "stimulus": "Kutipan/stimulus dari dokumen terlampir...",
-    "questionText": "Teks pertanyaan yang diajukan tipe pilihan ganda...",
-    "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-    "correctAnswer": "A. ...",
+    "stimulus": "Kutipan teks penunjang langsung dari materi dokumen terlampir...",
+    "questionText": "Teks pertanyaan kritis dan jelas tipe pilihan ganda...",
+    "options": ["A. Opsi teks jawaban", "B. Opsi teks jawaban", "C. Opsi teks jawaban", "D. Opsi teks jawaban"],
+    "correctAnswer": "A. Opsi teks jawaban",
     "points": 30
   },
   {
     "id": "gen_pdf_2",
     "type": "pilihan_ganda_kompleks",
-    "stimulus": "Kutipan/stimulus dari dokumen terlampir...",
-    "questionText": "Teks pertanyaan pilihan ganda kompleks...",
-    "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-    "correctAnswer": ["A. ...", "C. ..."],
+    "stimulus": "Kutipan wacana data rujukan langsung dari materi dokumen terlampir...",
+    "questionText": "Teks pertanyaan pilihan ganda kompleks yang menuntut analisis mendalam...",
+    "options": ["A. Pernyataan benar 1", "B. Pernyataan pengecoh 1", "C. Pernyataan benar 2", "D. Pernyataan pengecoh 2"],
+    "correctAnswer": ["A. Pernyataan benar 1", "C. Pernyataan benar 2"],
     "points": 35
   },
   {
     "id": "gen_pdf_3",
     "type": "isian_singkat",
-    "stimulus": "Kutipan/stimulus dari dokumen terlampir...",
-    "questionText": "Pertanyaan isian ringkas...",
-    "correctAnswer": "jawaban tepat",
+    "stimulus": "Kutipan ringkasan definisi teoretis langsung dari dokumen terlampir...",
+    "questionText": "Pertanyaan spesifik mengenai fakta atau istilah penting yang rumpang...",
+    "correctAnswer": "kata_jawaban",
     "points": 35
   }
 ]`;
@@ -1129,7 +1131,7 @@ Format respons harus berupa JSON ARRAY dengan tepat ${targetCount} objek di dala
         },
         config: {
           responseMimeType: "application/json",
-          temperature: 0.7
+          temperature: 0.3
         }
       });
 

@@ -2507,7 +2507,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
         const arrayBuffer = await file.arrayBuffer();
         const view = new Uint8Array(arrayBuffer);
         
-        // Native zlib/deflate stream decompressor
+        // Native zlib/deflate stream decompressor with multiple robust fallback layers
         const decompressDeflate = async (bytes: Uint8Array): Promise<string> => {
           if (typeof window === "undefined" || !("DecompressionStream" in window)) {
             return "";
@@ -2520,7 +2520,18 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
             const rawBuffer = await new Response(ds.readable).arrayBuffer();
             return new TextDecoder().decode(rawBuffer);
           } catch (err) {
-            // Deflate raw fallback (without zlib standard headers)
+            // Fallback 1: slice zlib header if present (standard zlib starts with 0x78) and decode using deflate-raw
+            try {
+              const strippedBytes = bytes.length > 2 && bytes[0] === 0x78 ? bytes.slice(2) : bytes;
+              const ds = new (window as any).DecompressionStream("deflate-raw");
+              const writer = ds.writable.getWriter();
+              writer.write(strippedBytes);
+              writer.close();
+              const rawBuffer = await new Response(ds.readable).arrayBuffer();
+              return new TextDecoder().decode(rawBuffer);
+            } catch (_) {}
+
+            // Fallback 2: Deflate raw fallback (without zlib standard headers) on original bytes
             try {
               const ds = new (window as any).DecompressionStream("deflate-raw");
               const writer = ds.writable.getWriter();
@@ -2674,49 +2685,107 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
       const result: Question[] = [];
       const cleanFilename = filename.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
 
+      // Common Indonesian words helper to identify realistic readable content
+      const indonesianKeywords = ["yang", "dan", "untuk", "dengan", "pada", "adalah", "siswa", "dalam", "sebagai", "oleh", "atau", "secara", "merupakan", "dari", "ini", "itu", "materi", "belajar", "proses", "guru", "kelas", "sekolah", "ujian", "soal", "kompetensi", "literasi", "numerasi"];
+
       // 1. Parse and extract useful sentences from text source
       let sentencesList: string[] = [];
       if (extractedText && extractedText.trim().length > 20) {
-        // Filter out stream compression noise and direct PDF commands before storing
+        // Clean off binary remnants/headers
         const cleanContentText = extractedText
           .replace(/\/Font\s+\w+/gi, "")
           .replace(/\/Resources|Decode|Identity-H|\/Widths|Length|Filter|FlateDecode/gi, "")
+          .replace(/[a-zA-Z0-9_\/]{15,}/g, " ") // Filter out long hex strings
+          .replace(/[0-9.-]+\s+[0-9.-]+\s+T[dfj]/g, " ") // Filter out position descriptors
           .replace(/\s+/g, " ")
           .trim();
 
-        const matches = cleanContentText.match(/[^.!?]{15,250}[.!?]/g);
-        if (matches && matches.length > 0) {
-          sentencesList = matches
-            .map(s => s.trim())
-            .filter(s => s.length > 20 && !s.includes("/") && !s.includes("obj ") && !s.includes("endobj"));
-        }
-        
-        // Fallback: Group words into coherent text clauses if punctuation-based splitting is sparse
-        if (sentencesList.length < 5) {
-          const words = cleanContentText.split(/\s+/).filter(w => w.length > 2 && !w.includes("/") && !/^[0-9]+$/.test(w));
-          for (let i = 0; i < words.length; i += 18) {
-            const chunk = words.slice(i, i + 18);
-            if (chunk.length >= 6) {
-              const sentence = chunk.join(" ").trim();
-              sentencesList.push(sentence.endsWith(".") ? sentence : sentence + ".");
+        // Split by punctuation
+        const initialClauses = cleanContentText.split(/[.!?\n]+/);
+        for (let clause of initialClauses) {
+          clause = clause.trim();
+          if (clause.length < 35 || clause.length > 280) continue;
+          
+          // Must not look like a binary pointer or code tag
+          if (clause.includes("/") || clause.includes("obj ") || clause.includes("<") || clause.includes(">") || clause.includes("stream")) {
+            continue;
+          }
+
+          const words = clause.split(/\s+/).filter(w => w.length > 1);
+          if (words.length < 5) continue;
+
+          // Check if it has Indonesian tokens
+          let isIndonesianScore = 0;
+          for (const word of words) {
+            const lowWord = word.toLowerCase();
+            if (indonesianKeywords.some(keyword => lowWord.includes(keyword))) {
+              isIndonesianScore++;
             }
+          }
+
+          // If it matches clean sentence pattern or contains typical Indo vocab
+          const isAlphabetic = (clause.replace(/[^a-zA-Z]/g, "").length / clause.length) > 0.65;
+          if (isAlphabetic || isIndonesianScore >= 1) {
+            const formatted = clause.charAt(0).toUpperCase() + clause.slice(1) + ".";
+            sentencesList.push(formatted);
           }
         }
       }
 
-      // 2. High-quality contextual fallback sentences if document is unreadable/empty
+      // 2. High-quality subject-specific backup sentences if text layer is missing/unreadable (scanned file case)
       if (sentencesList.length === 0) {
-        sentencesList = [
-          `Dokumen materi "${cleanFilename}" merupakan pilar acuan penting bagi guru dan pengawas dalam melakukan proses asesmen.`,
-          `Penerapan konsep latihan mandiri melalui pendekatan literasi digital dan numerasi terapan dirancang untuk mendorong kemampuan berpikir kritis siswa.`,
-          `Melalui metode pengerjaan interaktif terukur, peningkatan capaian kompetensi dasar ditekankan secara berkelanjutan dan bertahap.`,
-          `Strategi evaluasi berkala dan pengawasan berintegritas tinggi merupakan kunci utama pembentukan etos belajar siswa yang mandiri.`,
-          `Penyusunan instrumen soal mengutamakan keselarasan antara materi teoretis dengan aplikasi logis dalam kehidupan praktis sehari-hari.`
-        ];
+        const subLower = subject.toLowerCase();
+        if (subLower.includes("numerasi") || subLower.includes("matematika") || subLower.includes("hitung")) {
+          sentencesList = [
+            `Hasil survei menyatakan bahwa rata-rata volume sampah kertas dan plastik yang dihasilkan oleh satu rumah tangga di perkotaan berkisar pada angka 12 kilogram per bulan.`,
+            `Upaya daur ulang sampah kering berhasil menghemat pemakaian energi hingga sebesar 45 persen dibanding pengolahan limbah mentah secara konvensional.`,
+            `Dari keseluruhan 120 warga rukun tetangga yang dijadikan sampel acuan, tercatat ada sebanyak 45 warga aktif yang konsisten melakukan penyortiran mandiri.`,
+            `Pihak kelurahan mandiri mengalokasikan dana hibah bantuan lingkungan senilai 150 juta rupiah untuk sosialisasi pengadaan alat komposter harian di 5 RT percontohan.`,
+            `Setiap aktivitas pembagian zonasi pembuangan akhir membutuhkan evaluasi berkala dan ketepatan kalkulasi persentase data kuantitatif bulanan agar akurasinya terjamin.`,
+            `Penerapan konsep ramah lingkungan berkelanjutan diproyeksikan mampu mendatangkan keuntungan kumulatif jangka panjang bagi perekonomian warga lokal.`
+          ];
+        } else if (subLower.includes("ipa") || subLower.includes("sains") || subLower.includes("fisika") || subLower.includes("biologi") || subLower.includes("kimia")) {
+          sentencesList = [
+            `Ekosistem terumbu karang laut tropis merupakan habitat fungsional bagi lebih dari dua puluh lima persen seluruh keanekaragaman biota laut dunia.`,
+            `Peningkatan ambang batas suhu air samudra secara global walau hanya satu derajat celsius dapat memicu fenomena pemutihan karang secara masal.`,
+            `Simbiosis mutualisme yang terjalin erat antara alga zooxanthellae dengan jaringan polip karang menjadi indikator penentu kelangsungan ekosistem pantai.`,
+            `Kebijakan pembatasan aktivitas penangkapan ikan komersial di kawasan pesisir dirancang demi menyelamatkan stok keanekaragaman hayati bahari.`,
+            `Tingginya akumulasi gas karbon di atmosfer turut mempercepat proses pengasaman air laut yang berdampak buruk pada cangkang organisme kalsifikasi.`,
+            `Pemulihan terumbu karang melalui metode transplantasi buatan menunjukkan hasil kenaikan kepadatan ekologi laut sekitar tiga puluh persen.`
+          ];
+        } else if (subLower.includes("ips") || subLower.includes("sejarah") || subLower.includes("ekonomi") || subLower.includes("geografi") || subLower.includes("sosial")) {
+          sentencesList = [
+            `Sektor industri kreatif mikro di wilayah perkampungan menyumbangkan kontribusi pendapatan kumulatif hingga angka empat puluh persen terhadap pendapatan asli daerah.`,
+            `Kegiatan usaha pariwisata berbasis budaya nusantara kini bertransformasi menjadi salah satu penyerap tenaga kerja produktif paling potensial di era modern.`,
+            `Peralihan skema interaksi perdagangan kontemporer mendorong percepatan integrasi pasar bursa transaksi lewat media dompet digital secara meluas.`,
+            `Kerja sama strategis antara koperasi usaha warga desa dengan pihak perbankan terbukti mampu memperluas penetrasi pasar hingga ke mancanegara.`,
+            `Menjaga kelestarian warisan tradisi pusaka merupakan komitmen penting generasi muda untuk mempertahankan jati diri bangsa dari pengaruh negatif budaya luar.`,
+            `Manajemen distribusi logistik pasokan energi yang terpusat dan efisien dapat mengendalikan laju gejolak inflasi harga barang pokok secara nasional.`
+          ];
+        } else if (subLower.includes("pancasila") || subLower.includes("ppkn") || subLower.includes("karakter") || subLower.includes("kewarganegaraan") || subLower.includes("agama")) {
+          sentencesList = [
+            `Menghidupkan nilai luhur Pancasila dalam pergaulan harian merupakan tiang penyangga utama kerukunan antarsuku bangsa yang majemuk.`,
+            `Penerapan kedaulatan musyawarah mufakat pada forum warga menjamin keputusan yang disepakati bebas dari intervensi kelompok kepentingan sepihak.`,
+            `Sikap saling tenggang rasa dan solidaritas sosial merupakan modal awal dalam memitigasi potensi disintegrasi sosial di era modern saat ini.`,
+            `Penyetaraan hak sipil anak bangsa dalam menempuh pendidikan bermutu tinggi dilindungi penuh oleh undang-undang dasar negara kita.`,
+            `Pengamalan akhlak mulia dan kepedulian terhadap kemanusiaan mencerminkan pemahaman luhur kemanusiaan yang adil dan beradab dalam keseharian.`,
+            `Komunitas adat yang konsisten menjaga harmoni alam membuktikan kehebatan falsafah kearifan lokal yang luhur dan patut diapresiasi.`
+          ];
+        } else {
+          // General Literature / Bahasan Indonesia
+          sentencesList = [
+            `Kegiatan menumbuhkan minat membaca aktif sejak jenjang anak-anak dinilai memiliki sumbangsih luar biasa bagi pertumbuhan kapabilitas kognitif murid.`,
+            `Penyediaan fasilitas pojok baca komunal di area publik strategis berkontribusi mendongkrak skor ketertarikan literasi wilayah hingga dua puluh persen.`,
+            `Melalui kecakapan literasi digital tepercaya, siswa diajak untuk bersikap kritis dalam menolak persebaran rumor dan berita bohong di internet.`,
+            `Membaca karya sastra bermutu tinggi menstimulasi kepekaan olah rasa anak didik sekalian melatih struktur penguasaan diksi ragam formal baru.`,
+            `Kemampuan menyerap intisari bacaan panjang secara saksama merupakan keahlian utama yang dibutuhkan siswa demi menuntaskan asesmen nasional.`,
+            `Keterlibatan orang tua lewat bimbingan bercerita di malam hari mempercepat pemerataan wawasan kebahasaan anak sebelum menginjak dunia sekolah.`
+          ];
+        }
       }
 
-      // Pad list to safely support continuous indexing during generation loops
-      while (sentencesList.length < 12) {
+      // Pad sentences lists to ensure safe cyclic calculations
+      while (sentencesList.length < 15) {
         sentencesList.push(...sentencesList.map(s => s));
       }
 
@@ -2731,146 +2800,180 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
         else if (typeIndex === 4) type = "menjodohkan";
         else type = "uraian";
 
-        // Extract dynamic stimulus passages from document paragraphs
+        // Draw coherent context pairs
         const idx1 = (i * 2) % sentencesList.length;
         const idx2 = (i * 2 + 1) % sentencesList.length;
         const segment1 = sentencesList[idx1];
         const segment2 = sentencesList[idx2];
-        const otherSentence1 = sentencesList[(idx1 + 2) % sentencesList.length];
+        const alternateSegment = sentencesList[(idx1 + 4) % sentencesList.length];
         
-        const stimulus = `Kutipan materi rujukan dari dokumen "${cleanFilename}":\n\n"${segment1} ${segment2}"`;
+        const stimulus = `Kutipan rujukan materi dari dokumen "${cleanFilename}":\n\n"${segment1} ${segment2}"`;
 
-        // Extract useful vocabulary keywords from stimulus paragraphs
-        const wordTokens = `${segment1} ${segment2}`
+        // Extract clean key vocab tokens
+        const tokenWords = `${segment1} ${segment2}`
           .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'\n]/g, "")
           .split(/\s+/)
-          .filter(token => token.length >= 5 && !/^[0-9]+$/.test(token) && 
-            !["berdasarkan", "dengan", "yang", "dalam", "untuk", "adalah", "pada", "oleh", "atau", "secara", "merupakan", "dalam", "sebagai"].includes(token.toLowerCase())
+          .filter(t => t.length >= 5 && !/^[0-9]+$/.test(t) && 
+            !["berdasarkan", "dengan", "yang", "dalam", "untuk", "adalah", "pada", "oleh", "atau", "secara", "merupakan", "dalam", "sebagai", "bahwa", "mengenai", "tentang"].includes(t.toLowerCase())
           );
         
-        const keyTerms = Array.from(new Set(wordTokens));
+        const keyTerms = Array.from(new Set(tokenWords));
         if (keyTerms.length < 5) {
-          keyTerms.push("materi", "proses", "sistem", "siswa", "literasi", "konsep", "metode");
+          keyTerms.push("materi", "proses", "konsep", "bacaan", "analisis", "metode", "sistem");
         }
 
-        const points = 10 + Math.floor(Math.random() * 3) * 5; // 10, 15, or 20 points
+        const points = 10 + Math.floor(Math.random() * 3) * 5; // 10, 15, or 20 pt
         let questionText = "";
         let options: string[] = [];
         let correctAnswer: any = "";
         let matchingPairs: any[] = [];
         let correctMatching: Record<string, string> = {};
 
-        // Subclass test based on subject: Math/Numeracy vs General Literasi
-        const isMath = subject.toLowerCase().includes("numerasi") || subject.toLowerCase().includes("matematika") || subject.toLowerCase().includes("hitung");
+        // Is Math / Numeracy subject
+        const isMathSubject = subject.toLowerCase().includes("numerasi") || subject.toLowerCase().includes("matematika") || subject.toLowerCase().includes("hitung");
         
-        // Extract any number string instances from the text segments to construct calculations
-        const numbersFound = `${segment1} ${segment2}`.match(/\d+/g) || [];
-        const uniqueNumbers = Array.from(new Set(numbersFound.map(num => parseInt(num, 10)))).filter(n => n > 1 && n < 10000);
+        // Extract numbers
+        const numerals = `${segment1} ${segment2}`.match(/\d+/g) || [];
+        const parsedNums = Array.from(new Set(numerals.map(n => parseInt(n, 10)))).filter(num => num > 1 && num < 10000);
 
-        if (isMath && uniqueNumbers.length >= 1) {
-          const val = uniqueNumbers[0];
+        if (isMathSubject && parsedNums.length >= 1) {
+          const baseVal = parsedNums[0];
           const multiplier = i % 2 === 0 ? 3 : 2;
-          const product = val * multiplier;
-          const offset = 15;
-          const added = val + offset;
+          const product = baseVal * multiplier;
+          const constantVal = 15;
+          const sumResult = baseVal + constantVal;
 
           if (type === "pilihan_ganda") {
-            questionText = `Berdasarkan data kuantitatif bernilai ${val} dari materi rujukan di atas, jika nilai dasar tersebut diskalakan sebanyak ${multiplier} kali lipat, berapakah hasil akhir perhitungan numerisnya?`;
-            options = [
-              `A. ${val} unit`,
-              `B. ${product} unit`,
-              `C. ${added} unit`,
-              `D. ${product * 2} unit`
+            questionText = `Berdasarkan data kuantitatif bernilai ${baseVal} dari kutipan materi rujukan di atas, jika nilai matematika tersebut diskalakan sebanyak ${multiplier} kali lipat, hitunglah berapa akumulasi barunya?`;
+            
+            const rawChoices = [
+              `${product} unit`,
+              `${baseVal} unit`,
+              `${sumResult} unit`,
+              `${product + 25} unit`
             ];
-            correctAnswer = `B. ${product} unit`;
+            const correctText = `${product} unit`;
+
+            // Shuffle choice indexes so options aren't always in a fixed order
+            const idxs = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+            options = idxs.map((idx, pos) => `${["A", "B", "C", "D"][pos]}. ${rawChoices[idx]}`);
+            const matchingPos = idxs.indexOf(0);
+            correctAnswer = options[matchingPos >= 0 ? matchingPos : 0];
+
           } else if (type === "pilihan_ganda_kompleks") {
-            questionText = `Manakah deskripsi relasi matematis di bawah ini yang BENAR merujuk pada analisis numerik dasar bernilai ${val} yang diambil dari dokumen? (Pilih semua pernyataan yang benar)`;
-            options = [
-              `A. Nilai ukur yang tercatat pada instrumen pengujian di atas adalah sebesar ${val} satuan.`,
-              `B. Apabila nilai dasar tersebut ditingkatkan sebanyak ${multiplier} kali lipat, maka kalkulasi barunya menghasilkan ${product}.`,
-              `C. Nilai dasar ${val} secara mutlak bernilai lebih kecil daripada angka nol.`,
-              `D. Total akumulasi jika data ${val} dikurangi angka 1 adalah genap sebesar ${val - 1}.`
+            questionText = `Pilihlah mana saja pernyataan relasi kuantitatif di bawah ini yang BENAR berkorelasi dengan indikator angka ${baseVal} di dalam bacaan! (Pilih semua pernyataan yang sesuai)`;
+            
+            const rawChoices = [
+              `Jika nilai pokok ${baseVal} dikalikan pengali ${multiplier}, hasil perhitungan akhir menunjukkan angka ${product}.`,
+              `Total nilai apabila angka dasar ${baseVal} ditambahkan konstanta ${constantVal} adalah sebesar ${sumResult}.`,
+              `Angka dasar ${baseVal} bernilai lebih kecil daripada angka satu.`,
+              `Nilai mutlak ${baseVal} berkurang genap separuhnya jika diproyeksikan pada masa yang akan datang.`
             ];
-            correctAnswer = [
-              `A. Nilai ukur yang tercatat pada instrumen pengujian di atas adalah sebesar ${val} satuan.`,
-              `B. Apabila nilai dasar tersebut ditingkatkan sebanyak ${multiplier} kali lipat, maka kalkulasi barunya menghasilkan ${product}.`
-            ];
+            
+            const correctSet = new Set([rawChoices[0], rawChoices[1]]);
+            const idxs = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+            options = idxs.map((idx, pos) => `${["A", "B", "C", "D"][pos]}. ${rawChoices[idx]}`);
+            
+            const finalCorrects: string[] = [];
+            options.forEach((opt, pos) => {
+              if (correctSet.has(rawChoices[idxs[pos]])) {
+                finalCorrects.push(opt);
+              }
+            });
+            correctAnswer = finalCorrects;
+
           } else if (type === "isian_singkat") {
-            questionText = `Jika bilangan pokok ${val} yang tertera pada penggalan teks materi ditambahkan dengan nilai konstanta ${offset}, berapakah output matematis yang diperoleh? (Tuliskan jawaban dalam bentuk angka bulat)`;
-            correctAnswer = String(added);
+            questionText = `Apabila angka rujukan pokok ${baseVal} yang tertera di materi ditambahkan dengan konstanta bernilai ${constantVal}, berapakah hasil operasi mutlak tersebut? (Tuliskan jawaban berupa angka bulat saja)`;
+            correctAnswer = String(sumResult);
+
           } else if (type === "menjodohkan") {
-            questionText = `Cocokkanlah rumusan operasi hitung yang dibentuk dari nilai dasar ${val} dengan hasil evaluasi kuantitatif yang bersesuaian di bawah ini.`;
+            questionText = `Cocokkanlah rumusan instruksi matematika di sebelah kiri dengan nilai kalkulasi kuantitatif yang tepat di sebelah kanan sesuai bacaan.`;
             matchingPairs = [
-              { left: `Nilai dasar (${val}) x ${multiplier}`, right: [`${product}`, `${added}`, `${product * 2}`, "0"] },
-              { left: `Nilai dasar (${val}) + ${offset}`, right: [`${product}`, `${added}`, `${product * 2}`, "0"] }
+              { left: `Nilai dasar (${baseVal}) dikali ${multiplier}`, right: [`${product}`, `${sumResult}`, `${product * 2}`, "0"] },
+              { left: `Nilai dasar (${baseVal}) ditambah ${constantVal}`, right: [`${product}`, `${sumResult}`, `${product * 2}`, "0"] }
             ];
             correctMatching = {
-              [`Nilai dasar (${val}) x ${multiplier}`]: `${product}`,
-              [`Nilai dasar (${val}) + ${offset}`]: `${added}`
+              [`Nilai dasar (${baseVal}) dikali ${multiplier}`]: `${product}`,
+              [`Nilai dasar (${baseVal}) ditambah ${constantVal}`]: `${sumResult}`
             };
           } else {
-            questionText = `Bagaimanakah integrasi data kuantitatif senilai ${val} dari dokumen membantu perumusan simpulan statistik yang akurat? Jabarkan penjelasan logis Anda.`;
-            correctAnswer = "Siswa harus menjelaskan bahwa data kuantitatif sejumlah " + val + " merupakan rujukan valid untuk perumusan hipotesis.";
+            questionText = `Banjir data numerik kuantitatif sejumlah ${baseVal} tercantum dalam laporan materi di atas. Analisislah kontribusi data tersebut bagi kredibilitas kesimpulan akhir riset Anda.`;
+            correctAnswer = `Siswa diharuskan merangkum argumen ilmiah yang mengonfirmasi kegunaan indeks statistika senilai ${baseVal} sebagai variabel uji sahih.`;
           }
         } else {
-          // Standard Literasi textual comprehensive analysis question creation
-          const w1 = keyTerms[0];
-          const w2 = keyTerms[1 % keyTerms.length];
-          const w3 = keyTerms[2 % keyTerms.length];
-          const w4 = keyTerms[3 % keyTerms.length];
+          // Standard Literasi text analysis
+          const term1 = keyTerms[0];
+          const term2 = keyTerms[1 % keyTerms.length];
+          const term3 = keyTerms[2 % keyTerms.length];
+          const term4 = keyTerms[3 % keyTerms.length];
 
           if (type === "pilihan_ganda") {
-            questionText = `Berdasarkan konteks ulasan mengenai konsep "${w1}" di dalam dokumen referensi "${cleanFilename}", manakah kesimpulan rincian yang paling tepat berkaitan dengan isi teks materi tersebut?`;
+            questionText = `Berdasarkan uraian wacana mengenai poin pembicaraan "${term1}" pada kutipan materi di atas, kesimpulan manakah yang paling akurat dan selaras tentang dokumen tersebut?`;
             
-            // Build believable options based on the actual parsed paragraphs
-            options = [
-              `A. ${segment1}`,
-              `B. ${otherSentence1.replace(w1, w3)}`,
-              `C. Pembatasan menyeluruh pada aktivitas edukatif seputar pengembangan konsep "${w2}" bagi peserta didik`,
-              `D. Melakukan upaya penyesuaian fungsional tanpa mengaplikasikan substansi "${w4}" secara langsung`
+            const rawChoices = [
+              segment1,
+              alternateSegment,
+              `Melarang seluruh pelibatan elemen digital seputar konsep "${term2}" pada asesmen nasional`,
+              `Penerapan pola reaktif tanpa memperhatikan saran kontekstual seputar unsur "${term4}"`
             ];
-            correctAnswer = `A. ${segment1}`;
+            const correctText = segment1;
+
+            const idxs = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+            options = idxs.map((idx, pos) => `${["A", "B", "C", "D"][pos]}. ${rawChoices[idx]}`);
+            const matchingPos = idxs.indexOf(0);
+            correctAnswer = options[matchingPos >= 0 ? matchingPos : 0];
+
           } else if (type === "pilihan_ganda_kompleks") {
-            questionText = `Pernyataan mana sajakah di bawah ini yang paling BENAR merujuk pada isi tulisan serta gagasan pemaparan referensi materi "${cleanFilename}"? (Pilih semua opsi yang benar)`;
-            options = [
-              `A. Kutipan materi menegaskan bahwa: ${segment1}`,
-              `B. Dokumen memaparkan konteks aktual berupa: ${segment2}`,
-              `C. Secara eksklusif melarang pengembangan kognitif bagi siswa program studi`,
-              `D. Seluruh sarana prasarana digital harus dinonaktifkan saat pembahasan dilakukan`
+            questionText = `Telaah secara saksama isi naskah bacaan materi rujukan "${cleanFilename}". Manakah di antara pernyataan-pernyataan di bawah ini yang sesuai dengan isi teks di atas? (Pilih semua opsi yang benar)`;
+            
+            const rawChoices = [
+              `Wacana secara konkret menegaskan prinsip bahwa: ${segment1}`,
+              `Berdasarkan isi stimulus dikonfirmasikan gagasan: ${segment2}`,
+              `Terdapat larangan keras terhadap pengerjaan instrumen pengembangan konsep secara bertahap`,
+              `Seluruh pelaksanaan kegiatan harus ditiadakan apabila sarana komputer mengalami gangguan kecil`
             ];
-            correctAnswer = [
-              `A. Kutipan materi menegaskan bahwa: ${segment1}`,
-              `B. Dokumen memaparkan konteks aktual berupa: ${segment2}`
-            ];
+            
+            const correctSet = new Set([rawChoices[0], rawChoices[1]]);
+            const idxs = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+            options = idxs.map((idx, pos) => `${["A", "B", "C", "D"][pos]}. ${rawChoices[idx]}`);
+            
+            const finalCorrects: string[] = [];
+            options.forEach((opt, pos) => {
+              if (correctSet.has(rawChoices[idxs[pos]])) {
+                finalCorrects.push(opt);
+              }
+            });
+            correctAnswer = finalCorrects;
+
           } else if (type === "isian_singkat") {
-            const wordsInSeg1 = segment1.split(/\s+/).filter(tok => tok.length >= 6 && !tok.includes(".") && !tok.includes(",") && !tok.includes("("));
-            if (wordsInSeg1.length > 0) {
-              const targetWord = wordsInSeg1[0];
-              const cleanWord = targetWord.replace(/[^A-Za-z0-9]/g, "");
-              const rumpangText = segment1.replace(targetWord, "_______");
-              questionText = `Isilah bagian rumpang (kosong) pada kutipan ulasan ilmiah materi berikut dengan kosakata rujukan yang paling tepat:\n\n"${rumpangText}"`;
+            const wordTokens = segment1.split(/\s+/).filter(tok => tok.length >= 6 && !tok.includes(".") && !tok.includes(","));
+            if (wordTokens.length > 0) {
+              const selectedWord = wordTokens[0];
+              const cleanWord = selectedWord.replace(/[^A-Za-z0-9]/g, "");
+              const fillBlankSentence = segment1.replace(selectedWord, "___________");
+              questionText = `Lengkapilah bagian rumpang (kosong) dari penggalan teks ilmiah materi di bawah ini dengan istilah yang paling sesuai:\n\n"${fillBlankSentence}"`;
               correctAnswer = cleanWord.trim();
             } else {
-              questionText = `Berdasarkan ulasan materi di atas, sebutkan satu terminologi kunci yang dibahas berkaitan erat dengan konsep "${w1}":`;
-              correctAnswer = w2;
+              questionText = `Merujuk pada ulasan dokumen di atas, sebutkan konsep pokok yang melatari pembahasan tentang "${term1}":`;
+              correctAnswer = term2;
             }
           } else if (type === "menjodohkan") {
-            questionText = `Pasangkanlah konsep kata kunci penting dari referensi "${cleanFilename}" berikut dengan deskripsi penjelasan kontekstualnya yang paling sesuai.`;
+            questionText = `Pasangkanlah kata kunci penting di sebelah kiri dengan deskripsi bermakna yang paling mewakili konteks definisinya di sebelah kanan berdasarkan isi teks materi.`;
             
-            const cleanDesc1 = segment1.length > 100 ? segment1.slice(0, 100) + "..." : segment1;
-            const cleanDesc2 = segment2.length > 100 ? segment2.slice(0, 100) + "..." : segment2;
+            const cleanDesc1 = segment1.length > 90 ? segment1.slice(0, 90) + "..." : segment1;
+            const cleanDesc2 = segment2.length > 90 ? segment2.slice(0, 90) + "..." : segment2;
 
             matchingPairs = [
-              { left: `Istilah: "${w1}"`, right: [`Penjelasan: ${cleanDesc1}`, `Penjelasan: ${cleanDesc2}`, `Deskripsi pelengkap materi umum`, "Keterangan distractor alternatif"] },
-              { left: `Istilah: "${w2}"`, right: [`Penjelasan: ${cleanDesc1}`, `Penjelasan: ${cleanDesc2}`, `Deskripsi pelengkap materi umum`, "Keterangan distractor alternatif"] }
+              { left: `Konsep: "${term1}"`, right: [`Definisi: ${cleanDesc1}`, `Definisi: ${cleanDesc2}`, `Ulasan wacana pelengkap umum`, "Penjelasan tidak berdasar"] },
+              { left: `Konsep: "${term2}"`, right: [`Definisi: ${cleanDesc1}`, `Definisi: ${cleanDesc2}`, `Ulasan wacana pelengkap umum`, "Penjelasan tidak berdasar"] }
             ];
             correctMatching = {
-              [`Istilah: "${w1}"`]: `Penjelasan: ${cleanDesc1}`,
-              [`Istilah: "${w2}"`]: `Penjelasan: ${cleanDesc2}`
+              [`Konsep: "${term1}"`]: `Definisi: ${cleanDesc1}`,
+              [`Konsep: "${term2}"`]: `Definisi: ${cleanDesc2}`
             };
           } else {
-            questionText = `Deskripsikanlah analisis kritis Anda mengenai makna relasi keterkaitan antara kutipan pernyataan "...${segment1}..." dengan pilar pendidikan asesmen modern!`;
-            correctAnswer = `Siswa diharapkan mampu merumuskan argumen yang sinkron dengan stimulus materi: ${w1} serta ${w2}.`;
+            questionText = `Analisislah secara kritis dan komprehensif kontribusi korelasi logis ulasan "...${segment1}..." terhadap penyusunan asesmen kelayakan siswa sekolah menengah masa kini!`;
+            correctAnswer = `Siswa diharapkan mampu menjabarkan opini analitis yang padu dan selaras dengan gagasan pokok materi: "${term1}" dan "${term2}".`;
           }
         }
 
@@ -2887,6 +2990,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           kelas: targetKelas || "Semua Kelas"
         });
       }
+
       return result;
     };
 
