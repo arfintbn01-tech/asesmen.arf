@@ -2812,31 +2812,26 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           }
         }
 
-        let extracted = fallbackChunks.join(" ");
-
-        if (fallbackChunks.length < 5) {
-          const words = binaryString.match(/[a-zA-Z]{4,}/g) || [];
-          const ignoredKeywords = new Set([
-            "obj", "endobj", "stream", "endstream", "xref", "trailer", "startxref", 
-            "length", "filter", "flatedecode", "width", "height", "font", "type", 
-            "subtype", "catalog", "pages", "page", "parent", "resources", "mediabox"
-          ]);
-          const filtered = words.filter(w => !ignoredKeywords.has(w.toLowerCase()) && w.length < 25);
+        let extracted = "";
+        
+        // Only trust fallbackChunks if they contain enough real alphabetic text and look readable
+        const readableChunks = fallbackChunks.filter(c => {
+          // Reject chunk if it contains Private Use Area characters (symbols)
+          if (/[\uE000-\uF8FF]/.test(c)) return false;
+          // Reject chunk if it is mainly non-alphabetic
+          const alphaRatio = c.replace(/[^a-zA-Z]/g, "").length / (c.length || 1);
+          if (alphaRatio < 0.7) return false;
+          // Must contain standard vowel structures (genuine language)
+          if (!/[aeiouyAEIOUY]/.test(c)) return false;
           
-          if (filtered.length > 15) {
-            const simulatedSentences: string[] = [];
-            for (let i = 0; i < filtered.length; i += 12) {
-              const chunk = filtered.slice(i, i + 12);
-              if (chunk.length >= 4) {
-                const sentence = chunk.join(" ");
-                simulatedSentences.push(sentence.charAt(0).toUpperCase() + sentence.slice(1) + ".");
-              }
-            }
-            extracted = simulatedSentences.join("\n");
-          }
+          return true;
+        });
+
+        if (readableChunks.length >= 5) {
+          extracted = readableChunks.join(" ");
         }
 
-        if (extracted && extracted.trim().length > 15) {
+        if (extracted && extracted.trim().length > 25) {
           return extracted.trim();
         }
       } catch (err) {
@@ -2862,7 +2857,25 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
 
       // 1. Parse and extract useful sentences from text source
       let sentencesList: string[] = [];
-      if (extractedText && extractedText.trim().length > 20) {
+      
+      // Ensure extracted text contains actual readable sentences instead of pure code/symbols
+      const containsHumanLanguage = (text: string): boolean => {
+        const lower = text.toLowerCase();
+        const commonWords = [
+          "yang", "dan", "untuk", "dengan", "pada", "adalah", "siswa", "dalam", "sebagai", "oleh", "atau", "secara", "merupakan", "dari", "ini", "itu", "materi", "belajar", "proses", "guru", "kelas", "sekolah", "ujian", "soal",
+          "the", "and", "of", "to", "in", "is", "that", "it", "for", "on", "with", "as", "at", "by", "an"
+        ];
+        let foundCount = 0;
+        for (const word of commonWords) {
+          const regex = new RegExp("\\b" + word + "\\b", "i");
+          if (regex.test(lower)) {
+            foundCount++;
+          }
+        }
+        return foundCount >= 2;
+      };
+
+      if (extractedText && extractedText.trim().length > 20 && containsHumanLanguage(extractedText)) {
         // Clean off binary remnants/headers
         const cleanContentText = extractedText
           .replace(/\/Font\s+\w+/gi, "")
@@ -2879,12 +2892,29 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           if (clause.length < 35 || clause.length > 280) continue;
           
           // Must not look like a binary pointer or code tag
-          if (clause.includes("/") || clause.includes("obj ") || clause.includes("<") || clause.includes(">") || clause.includes("stream")) {
+          if (clause.includes("/") || clause.includes("obj ") || clause.includes("<") || clause.includes(">") || clause.includes("stream") || clause.includes("endobj") || clause.includes("endstream")) {
+            continue;
+          }
+
+          // Must not contain Private Use Area characters (weird icons/symbols)
+          if (/[\uE000-\uF8FF]/.test(clause)) {
             continue;
           }
 
           const words = clause.split(/\s+/).filter(w => w.length > 1);
           if (words.length < 5) continue;
+
+          // Vowel ratio check to discard random character sets/binary remnants (e.g. grpt bfd)
+          let wordsWithVowels = 0;
+          for (const w of words) {
+            const lowWord = w.toLowerCase();
+            if (/[aeiouy]/.test(lowWord)) {
+              wordsWithVowels++;
+            }
+          }
+          if (wordsWithVowels / words.length < 0.6) {
+            continue;
+          }
 
           // Check if it has Indonesian tokens
           let isIndonesianScore = 0;
@@ -2896,8 +2926,8 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           }
 
           // If it matches clean sentence pattern or contains typical Indo vocab
-          const isAlphabetic = (clause.replace(/[^a-zA-Z]/g, "").length / clause.length) > 0.65;
-          if (isAlphabetic || isIndonesianScore >= 1) {
+          const isAlphabetic = (clause.replace(/[^a-zA-Z]/g, "").length / clause.length) > 0.75;
+          if (isAlphabetic && isIndonesianScore >= 1) {
             const formatted = clause.charAt(0).toUpperCase() + clause.slice(1) + ".";
             sentencesList.push(formatted);
           }
@@ -2905,7 +2935,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
       }
 
       // 2. High-quality subject-specific backup sentences if text layer is missing/unreadable (scanned file case)
-      if (sentencesList.length === 0) {
+      if (sentencesList.length < 3) {
         const subLower = subject.toLowerCase();
         if (subLower.includes("numerasi") || subLower.includes("matematika") || subLower.includes("hitung")) {
           sentencesList = [
