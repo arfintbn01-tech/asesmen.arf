@@ -2677,18 +2677,26 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
       // 1. Parse and extract useful sentences from text source
       let sentencesList: string[] = [];
       if (extractedText && extractedText.trim().length > 20) {
-        const cleaned = extractedText.replace(/\s+/g, " ").trim();
-        const matches = cleaned.match(/[^.!?]{10,250}[.!?]/g);
+        // Filter out stream compression noise and direct PDF commands before storing
+        const cleanContentText = extractedText
+          .replace(/\/Font\s+\w+/gi, "")
+          .replace(/\/Resources|Decode|Identity-H|\/Widths|Length|Filter|FlateDecode/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        const matches = cleanContentText.match(/[^.!?]{15,250}[.!?]/g);
         if (matches && matches.length > 0) {
-          sentencesList = matches.map(s => s.trim()).filter(s => s.length > 15);
+          sentencesList = matches
+            .map(s => s.trim())
+            .filter(s => s.length > 20 && !s.includes("/") && !s.includes("obj ") && !s.includes("endobj"));
         }
         
-        // Fallback: group words into clauses if punctuation-based splitting is sparse
+        // Fallback: Group words into coherent text clauses if punctuation-based splitting is sparse
         if (sentencesList.length < 5) {
-          const words = cleaned.split(/\s+/);
-          for (let i = 0; i < words.length; i += 15) {
-            const chunk = words.slice(i, i + 15);
-            if (chunk.length >= 5) {
+          const words = cleanContentText.split(/\s+/).filter(w => w.length > 2 && !w.includes("/") && !/^[0-9]+$/.test(w));
+          for (let i = 0; i < words.length; i += 18) {
+            const chunk = words.slice(i, i + 18);
+            if (chunk.length >= 6) {
               const sentence = chunk.join(" ").trim();
               sentencesList.push(sentence.endsWith(".") ? sentence : sentence + ".");
             }
@@ -2696,20 +2704,20 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
         }
       }
 
-      // 2. Fallbacks sentences if document is unreadable/empty
+      // 2. High-quality contextual fallback sentences if document is unreadable/empty
       if (sentencesList.length === 0) {
         sentencesList = [
-          `Dokumen materi "${cleanFilename}" merupakan pilar acuan penting bagi guru dan pengawas dalam asesmen ruangan.`,
-          `Penerapan latihan mandiri secara literasi digital dan numerasi terapan dirancang untuk mendorong tingkat berpikir analitis tinggi.`,
-          `Melalui metode interaktif ini, peningkatan capaian kelulusan berbasis sistem komputerisasi modern dapat tercapai secara akseleratif.`,
-          `Strategi evaluasi berkala dan pengawasan berintegritas tinggi merupakan kunci pembentukan akhlak mulia kepribadian siswa.`,
-          `Penyusunan instrumen soal ujian nasional ANBK harus senantiasa menekankan pada relevansi kehidupan praktis sehari-hari.`
+          `Dokumen materi "${cleanFilename}" merupakan pilar acuan penting bagi guru dan pengawas dalam melakukan proses asesmen.`,
+          `Penerapan konsep latihan mandiri melalui pendekatan literasi digital dan numerasi terapan dirancang untuk mendorong kemampuan berpikir kritis siswa.`,
+          `Melalui metode pengerjaan interaktif terukur, peningkatan capaian kompetensi dasar ditekankan secara berkelanjutan dan bertahap.`,
+          `Strategi evaluasi berkala dan pengawasan berintegritas tinggi merupakan kunci utama pembentukan etos belajar siswa yang mandiri.`,
+          `Penyusunan instrumen soal mengutamakan keselarasan antara materi teoretis dengan aplikasi logis dalam kehidupan praktis sehari-hari.`
         ];
       }
 
-      // Pad list to safely support continuous indexing
-      while (sentencesList.length < 8) {
-        sentencesList.push(...sentencesList.map(s => s + ""));
+      // Pad list to safely support continuous indexing during generation loops
+      while (sentencesList.length < 12) {
+        sentencesList.push(...sentencesList.map(s => s));
       }
 
       for (let i = 1; i <= count; i++) {
@@ -2730,17 +2738,19 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
         const segment2 = sentencesList[idx2];
         const otherSentence1 = sentencesList[(idx1 + 2) % sentencesList.length];
         
-        const stimulus = `[KUTIPAN HASIL PARSING INTEGRAL REFERENSI: ${cleanFilename.toUpperCase()}]\n\n"${segment1} ${segment2}"\n\nPenelitian instrumen ujian dikembangkan langsung dari ekstraksi lembar dokumen digital pengawas secara dinamis (Mode Offline/GitHub Pages).`;
+        const stimulus = `Kutipan materi rujukan dari dokumen "${cleanFilename}":\n\n"${segment1} ${segment2}"`;
 
         // Extract useful vocabulary keywords from stimulus paragraphs
         const wordTokens = `${segment1} ${segment2}`
           .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'\n]/g, "")
           .split(/\s+/)
-          .filter(token => token.length >= 5 && !/^[0-9]+$/.test(token) && token.toLowerCase() !== "berdasarkan" && token.toLowerCase() !== "dengan" && token.toLowerCase() !== "yang" && token.toLowerCase() !== "dalam" && token.toLowerCase() !== "untuk");
+          .filter(token => token.length >= 5 && !/^[0-9]+$/.test(token) && 
+            !["berdasarkan", "dengan", "yang", "dalam", "untuk", "adalah", "pada", "oleh", "atau", "secara", "merupakan", "dalam", "sebagai"].includes(token.toLowerCase())
+          );
         
         const keyTerms = Array.from(new Set(wordTokens));
         if (keyTerms.length < 5) {
-          keyTerms.push("materi", "belajar", "proses", "sistem", "siswa", "keberhasilan", "literasi");
+          keyTerms.push("materi", "proses", "sistem", "siswa", "literasi", "konsep", "metode");
         }
 
         const points = 10 + Math.floor(Math.random() * 3) * 5; // 10, 15, or 20 points
@@ -2765,34 +2775,34 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           const added = val + offset;
 
           if (type === "pilihan_ganda") {
-            questionText = `Berdasarkan fakta kuantitatif bernilai ${val} dari materi rujukan "${cleanFilename}" di atas, apabila nilai dasar tersebut dikalikan dengan faktor pengali ${multiplier}, berapakah hasil akhir perhitungan aritmetikanya?`;
+            questionText = `Berdasarkan data kuantitatif bernilai ${val} dari materi rujukan di atas, jika nilai dasar tersebut diskalakan sebanyak ${multiplier} kali lipat, berapakah hasil akhir perhitungan numerisnya?`;
             options = [
-              `A. ${val} unit (Data asli berharga tetap)`,
-              `B. ${product} unit (Hasil operasi perkalian)`,
-              `C. ${added} unit (Hasil penambahan konstan)`,
-              `D. ${product * 2} unit (Proyeksi batas kelipatan tertinggi)`
+              `A. ${val} unit`,
+              `B. ${product} unit`,
+              `C. ${added} unit`,
+              `D. ${product * 2} unit`
             ];
-            correctAnswer = `B. ${product} unit (Hasil operasi perkalian)`;
+            correctAnswer = `B. ${product} unit`;
           } else if (type === "pilihan_ganda_kompleks") {
-            questionText = `Manakah deskripsi relasi matematis di bawah ini yang BENAR merujuk pada analisis numerik dasar bernilai ${val} yang diambil dari dokumen? (Pilih semua yang benar)`;
+            questionText = `Manakah deskripsi relasi matematis di bawah ini yang BENAR merujuk pada analisis numerik dasar bernilai ${val} yang diambil dari dokumen? (Pilih semua pernyataan yang benar)`;
             options = [
-              `A. Nilai asli terukur pada pengujian instrumen di atas adalah sebesar ${val} satuan.`,
+              `A. Nilai ukur yang tercatat pada instrumen pengujian di atas adalah sebesar ${val} satuan.`,
               `B. Apabila nilai dasar tersebut ditingkatkan sebanyak ${multiplier} kali lipat, maka kalkulasi barunya menghasilkan ${product}.`,
-              `C. Nilai dasar ${val} secara pasti bernilai lebih kecil daripada angka nol.`,
-              `D. Total akumulasi jika data ${val} dikurangi angka 1 adalah genap ${val - 1}.`
+              `C. Nilai dasar ${val} secara mutlak bernilai lebih kecil daripada angka nol.`,
+              `D. Total akumulasi jika data ${val} dikurangi angka 1 adalah genap sebesar ${val - 1}.`
             ];
             correctAnswer = [
-              `A. Nilai asli terukur pada pengujian instrumen di atas adalah sebesar ${val} satuan.`,
+              `A. Nilai ukur yang tercatat pada instrumen pengujian di atas adalah sebesar ${val} satuan.`,
               `B. Apabila nilai dasar tersebut ditingkatkan sebanyak ${multiplier} kali lipat, maka kalkulasi barunya menghasilkan ${product}.`
             ];
           } else if (type === "isian_singkat") {
-            questionText = `Berdasarkan rangkuman numeris dokumen: Jika bilangan pokok ${val} yang tertera di materi ditambahkan konstanta ${offset}, berapakah output kalkulasi yang Anda dapatkan? (Ketik jawaban mutlak berupa angka bulat)`;
+            questionText = `Jika bilangan pokok ${val} yang tertera pada penggalan teks materi ditambahkan dengan nilai konstanta ${offset}, berapakah output matematis yang diperoleh? (Tuliskan jawaban dalam bentuk angka bulat)`;
             correctAnswer = String(added);
           } else if (type === "menjodohkan") {
-            questionText = `Cocokkanlah formula operasi hitung yang dibentuk dari bilangan pokok dasar ${val} dengan hasil evaluasi kuantitatif yang bersesuaian berikut.`;
+            questionText = `Cocokkanlah rumusan operasi hitung yang dibentuk dari nilai dasar ${val} dengan hasil evaluasi kuantitatif yang bersesuaian di bawah ini.`;
             matchingPairs = [
-              { left: `Nilai dasar (${val}) x ${multiplier}`, right: [`${product}`, `${added}`, "1000", "0"] },
-              { left: `Nilai dasar (${val}) + ${offset}`, right: [`${product}`, `${added}`, "1000", "0"] }
+              { left: `Nilai dasar (${val}) x ${multiplier}`, right: [`${product}`, `${added}`, `${product * 2}`, "0"] },
+              { left: `Nilai dasar (${val}) + ${offset}`, right: [`${product}`, `${added}`, `${product * 2}`, "0"] }
             ];
             correctMatching = {
               [`Nilai dasar (${val}) x ${multiplier}`]: `${product}`,
@@ -2800,7 +2810,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
             };
           } else {
             questionText = `Bagaimanakah integrasi data kuantitatif senilai ${val} dari dokumen membantu perumusan simpulan statistik yang akurat? Jabarkan penjelasan logis Anda.`;
-            correctAnswer = "Penjelasan siswa harus didukung oleh data kuantitatif senilai " + val + " yang tersaji di dokumen.";
+            correctAnswer = "Siswa harus menjelaskan bahwa data kuantitatif sejumlah " + val + " merupakan rujukan valid untuk perumusan hipotesis.";
           }
         } else {
           // Standard Literasi textual comprehensive analysis question creation
@@ -2810,25 +2820,27 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           const w4 = keyTerms[3 % keyTerms.length];
 
           if (type === "pilihan_ganda") {
-            questionText = `Berdasar pada konteks bahasan "${w1}" di dalam dokumen referensi "${cleanFilename}", manakah kesimpulan rincian yang paling tepat?`;
+            questionText = `Berdasarkan konteks ulasan mengenai konsep "${w1}" di dalam dokumen referensi "${cleanFilename}", manakah kesimpulan rincian yang paling tepat berkaitan dengan isi teks materi tersebut?`;
+            
+            // Build believable options based on the actual parsed paragraphs
             options = [
-              `A. ${segment1} (Merupakan fakta rujukan eksplisit dari dokumen)`,
-              `B. ${otherSentence1.replace(w1, w3)} (Argumen di luar konteks bahasan utama)`,
-              `C. Pembatasan aktivitas edukatif seputar "${w2}" bagi keseluruhan peserta evaluasi`,
-              `D. Melakukan peniadaan komparatif tanpa koordinasi dengan pihak penyelenggara`
+              `A. ${segment1}`,
+              `B. ${otherSentence1.replace(w1, w3)}`,
+              `C. Pembatasan menyeluruh pada aktivitas edukatif seputar pengembangan konsep "${w2}" bagi peserta didik`,
+              `D. Melakukan upaya penyesuaian fungsional tanpa mengaplikasikan substansi "${w4}" secara langsung`
             ];
-            correctAnswer = `A. ${segment1} (Merupakan fakta rujukan eksplisit dari dokumen)`;
+            correctAnswer = `A. ${segment1}`;
           } else if (type === "pilihan_ganda_kompleks") {
-            questionText = `Pernyataan mana sajakah di bawah ini yang paling BENAR merujuk pada isi tulisan referensi "${cleanFilename}"? (Pilih semua yang benar)`;
+            questionText = `Pernyataan mana sajakah di bawah ini yang paling BENAR merujuk pada isi tulisan serta gagasan pemaparan referensi materi "${cleanFilename}"? (Pilih semua opsi yang benar)`;
             options = [
               `A. Kutipan materi menegaskan bahwa: ${segment1}`,
-              `B. Dokumen memaparkan konteks aktual: ${segment2}`,
+              `B. Dokumen memaparkan konteks aktual berupa: ${segment2}`,
               `C. Secara eksklusif melarang pengembangan kognitif bagi siswa program studi`,
               `D. Seluruh sarana prasarana digital harus dinonaktifkan saat pembahasan dilakukan`
             ];
             correctAnswer = [
               `A. Kutipan materi menegaskan bahwa: ${segment1}`,
-              `B. Dokumen memaparkan konteks aktual: ${segment2}`
+              `B. Dokumen memaparkan konteks aktual berupa: ${segment2}`
             ];
           } else if (type === "isian_singkat") {
             const wordsInSeg1 = segment1.split(/\s+/).filter(tok => tok.length >= 6 && !tok.includes(".") && !tok.includes(",") && !tok.includes("("));
@@ -2837,28 +2849,28 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
               const cleanWord = targetWord.replace(/[^A-Za-z0-9]/g, "");
               const rumpangText = segment1.replace(targetWord, "_______");
               questionText = `Isilah bagian rumpang (kosong) pada kutipan ulasan ilmiah materi berikut dengan kosakata rujukan yang paling tepat:\n\n"${rumpangText}"`;
-              correctAnswer = cleanWord.toLowerCase();
+              correctAnswer = cleanWord.trim();
             } else {
-              questionText = `Berdasarkan ulasan materi di atas, sebutkan satu terminologi kunci yang dibahas berkaitan dengan topik "${w1}":`;
-              correctAnswer = w1.toLowerCase();
+              questionText = `Berdasarkan ulasan materi di atas, sebutkan satu terminologi kunci yang dibahas berkaitan erat dengan konsep "${w1}":`;
+              correctAnswer = w2;
             }
           } else if (type === "menjodohkan") {
             questionText = `Pasangkanlah konsep kata kunci penting dari referensi "${cleanFilename}" berikut dengan deskripsi penjelasan kontekstualnya yang paling sesuai.`;
             
-            const cleanDesc1 = segment1.length > 60 ? segment1.slice(0, 60) + "..." : segment1;
-            const cleanDesc2 = segment2.length > 60 ? segment2.slice(0, 60) + "..." : segment2;
+            const cleanDesc1 = segment1.length > 100 ? segment1.slice(0, 100) + "..." : segment1;
+            const cleanDesc2 = segment2.length > 100 ? segment2.slice(0, 100) + "..." : segment2;
 
             matchingPairs = [
-              { left: `Istilah: "${w1}"`, right: [`Keterangan: ${cleanDesc1}`, `Keterangan: ${cleanDesc2}`, "Deskripsi opsional netral lainnya", "Informasi distractor umum"] },
-              { left: `Istilah: "${w2}"`, right: [`Keterangan: ${cleanDesc1}`, `Keterangan: ${cleanDesc2}`, "Deskripsi opsional netral lainnya", "Informasi distractor umum"] }
+              { left: `Istilah: "${w1}"`, right: [`Penjelasan: ${cleanDesc1}`, `Penjelasan: ${cleanDesc2}`, `Deskripsi pelengkap materi umum`, "Keterangan distractor alternatif"] },
+              { left: `Istilah: "${w2}"`, right: [`Penjelasan: ${cleanDesc1}`, `Penjelasan: ${cleanDesc2}`, `Deskripsi pelengkap materi umum`, "Keterangan distractor alternatif"] }
             ];
             correctMatching = {
-              [`Istilah: "${w1}"`]: `Keterangan: ${cleanDesc1}`,
-              [`Istilah: "${w2}"`]: `Keterangan: ${cleanDesc2}`
+              [`Istilah: "${w1}"`]: `Penjelasan: ${cleanDesc1}`,
+              [`Istilah: "${w2}"`]: `Penjelasan: ${cleanDesc2}`
             };
           } else {
-            questionText = `Deskripsikanlah analisis kritis Anda mengenai makna relasi keterkaitan antara kutipan pernyataan "...${segment1}..." dengan realitas dunia pendidikan modern saat ini!`;
-            correctAnswer = "Siswa diharapkan mampu merumuskan argumen yang sinkron dengan stimulus kutipan dokumen di atas.";
+            questionText = `Deskripsikanlah analisis kritis Anda mengenai makna relasi keterkaitan antara kutipan pernyataan "...${segment1}..." dengan pilar pendidikan asesmen modern!`;
+            correctAnswer = `Siswa diharapkan mampu merumuskan argumen yang sinkron dengan stimulus materi: ${w1} serta ${w2}.`;
           }
         }
 
