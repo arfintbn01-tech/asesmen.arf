@@ -5712,9 +5712,20 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
               </div>
 
               <div className="space-y-3.5">
-                <span className="text-[10px] font-extrabold text-slate-400 bg-slate-800 py-1 px-3 rounded-full border border-slate-700 uppercase tracking-widest inline-block">
-                  Subjek Terpilih: {subjectToGenerate}
-                </span>
+                <div className="space-y-1 text-left bg-slate-950/45 p-3 rounded-xl border border-slate-800 shadow-inner">
+                  <label className="block text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                    Ganti Subjek Terpilih (Otomatis):
+                  </label>
+                  <select
+                    value={subjectToGenerate}
+                    onChange={(e) => setSubjectToGenerate(e.target.value)}
+                    className="w-full bg-slate-800 hover:bg-slate-750 border border-slate-700/80 rounded-lg text-slate-200 text-xs font-bold py-1.5 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 block cursor-pointer transition shadow-sm"
+                  >
+                    {subjectsList.map((sub) => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
 
                 <ActiveSubjectQuestionsPreview subject={subjectToGenerate} refreshEvent={aiGenMessage || pdfGenMessage || manualQuestionsList.length === 0} onQuestionsChanged={syncLocalAndServerData} />
               </div>
