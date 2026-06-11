@@ -1076,47 +1076,49 @@ async function startServer() {
         }
       };
       
-      const prompt = `Anda adalah tim ahli pembuat soal instrumen ujian nasional ANBK (Asesmen Nasional Berbasis Komputer) di Asesmen Kompetensi Minimum (AKM) Kemendikbud-Ristek RI.
-Berikut telah dilampirkan dokumen referensi materi atau PDF rujukan yang diunggah oleh pengawas sekolah.
-Tolong buatkan TEPAT ${targetCount} butir soal ujian berkualitas tinggi dan berbobot akademis tinggi yang sepenuhnya bersandar pada isi materi dokumen tersebut untuk mata pelajaran: "${subject}".
+      const prompt = `Anda adalah sistem kecerdasan buatan ahli pengekstraktor dan pemformat instrumen ujian nasional ANBK (Asesmen Nasional Berbasis Komputer).
+Berikut dilampirkan dokumen PDF rujukan yang diunggah oleh pengawas sekolah. Dokumen ini dapat berupa lembar soal asli ataupun materi bacaan.
+
+TUGAS UTAMA DAN MANDATORI ANDA:
+1. **EKSTRAK SOAL ASLI**: Carilah soal-soal asli/eksisting yang tertulis di dalam dokumen PDF tersebut. **Ketik/buat soal ujian yang SAMA PERSIS dengan soal yang ada di dalam dokumen PDF tersebut**. Salin stimulus/wacana, teks pertanyaan, pilihan jawaban, dan tentukan kunci jawabannya secara akurat dari soal asli di dokumen. JANGAN mengarang soal baru jika di dokumen PDF sudah ada soal tertulis.
+2. **JANGAN MENGARANG BEBAS**: Prioritaskan 100% untuk mengekstrak dan menyalin secara persis butir soal yang sudah ada di dokumen PDF tersebut.
+3. **Pengecualian**: Jika (dan hanya jika) di dalam isi dokumen PDF tersebut sama sekali tidak ditemukan butir soal tertulis (hanya berisi materi bacaan mentah, buku teks, atau artikel), barulah Anda boleh membuat soal baru berkualitas tinggi yang sesuai dangan isi materi tersebut untuk mata pelajaran: "${subject}".
+4. **Jumlah Soal**: Ekstrak atau buatlah sebanyak TEPAT ${targetCount} butir soal ujian (atau sebanyak soal asli yang ditemukan di dalam dokumen jika jumlahnya memadai).
 
 Kriteria Kejelasan & Keselarasan Soal:
-1. **Sangat Spesifik & Relevan**: Soal HARUS menguji fakta spesifik, argumentasi, definisi konsep, data angka, atau korelasi nyata yang tertulis di dalam dokumen referensi. JANGAN pernah membuat soal umum atau menggunakan kalimat klise yang tidak ada hubungannya dengan isi spesifik dokumen.
-2. **Kualitas Bahasa**: Gunakan Bahasa Indonesia ragam baku, formal, jernih, dan sesuai dengan Ejaan Yang Disempurnakan (EYD). Kalimat pertanyaan tidak boleh ambigu atau membingungkan.
-3. **Penyusunan Stimulus**: Stimulus berupa paragraf utuh yang disalin atau dikutip secara akurat dari dokumen rujukan (minimal 3 kalimat). Harus menyajikan data konkret atau wacana literasi/numerasi yang utuh yang diperlukan siswa untuk bisa menjawab pertanyaan.
-4. **Penyusunan Pilihan Jawaban**:
-   - Untuk "pilihan_ganda": Buatlah 4 pilihan (A, B, C, D). Teks pilihan harus realistis, rapi, dan menghindari frasa petunjuk seperti "(fakta dokumen)". Berikan pengecoh (distractor) yang cerdas dan masuk akal, tetapi pastikan hanya ada SATU kunci jawaban yang benar-benar tepat.
-   - Untuk "pilihan_ganda_kompleks": Berikan 4 pilihan (A, B, C, D). Berikan minimal dua jawaban yang benar sebagai kunci jawaban (correctAnswer berupa array string).
-   - Untuk "isian_singkat": Pertanyaan harus menanyakan fakta eksplisit yang jawabannya berupa satu kata atau satu angka pendek yang pasti bersumber dari bacaan. JANGAN membuat isian yang membutuhkan deskripsi panjang.
-
-Jumlah total soal yang dihasilkan HARUS PERCIS ${targetCount} butir.
+1. **Sangat Spesifik & Relevan**: Salin stimulus/wacana secara akurat minimal 3 kalimat dari materi atau dokumen rujukan agar siswa memiliki konteks yang utuh untuk menjawab.
+2. **Kualitas Bahasa**: Gunakan Bahasa Indonesia ragam baku, formal, jernih, dan sesuai dengan Ejaan Yang Disempurnakan (EYD). Kalimat pertanyaan tidak boleh diubah jika menyalin dari soal asli.
+3. **Pilihan Jawaban**:
+   - Untuk "pilihan_ganda": Sediakan atau salin 4 pilihan (A, B, C, D). Teks pilihan harus rapi dan realistis. Tentukan salah satu sebagai kunci jawaban di "correctAnswer".
+   - Untuk "pilihan_ganda_kompleks": Sediakan atau salin pilihan yang ada. Berikan minimal dua jawaban yang benar sebagai kunci jawaban (correctAnswer berupa array string).
+   - Untuk "isian_singkat": Pastikan pertanyaannya memerlukan jawaban berupa satu kata atau angka pendek.
 
 Format respons wajib berupa RAW JSON ARRAY (tanpa pembungkus markdown, tanpa teks pembuka/penutup, langsung cetak array JSON):
 [
   {
     "id": "gen_pdf_1",
     "type": "pilihan_ganda",
-    "stimulus": "Kutipan teks penunjang langsung dari materi dokumen terlampir...",
-    "questionText": "Teks pertanyaan kritis dan jelas tipe pilihan ganda...",
-    "options": ["A. Opsi teks jawaban", "B. Opsi teks jawaban", "C. Opsi teks jawaban", "D. Opsi teks jawaban"],
-    "correctAnswer": "A. Opsi teks jawaban",
+    "stimulus": "Kutipan teks penunjang/stimulus dari soal asli di PDF...",
+    "questionText": "Teks pertanyaan asli yang disalin persis dari PDF...",
+    "options": ["A. Opsi A", "B. Opsi B", "C. Opsi C", "D. Opsi D"],
+    "correctAnswer": "A. Opsi A",
     "points": 30
   },
   {
     "id": "gen_pdf_2",
     "type": "pilihan_ganda_kompleks",
-    "stimulus": "Kutipan wacana data rujukan langsung dari materi dokumen terlampir...",
-    "questionText": "Teks pertanyaan pilihan ganda kompleks yang menuntut analisis mendalam...",
-    "options": ["A. Pernyataan benar 1", "B. Pernyataan pengecoh 1", "C. Pernyataan benar 2", "D. Pernyataan pengecoh 2"],
-    "correctAnswer": ["A. Pernyataan benar 1", "C. Pernyataan benar 2"],
+    "stimulus": "Kutipan stimulus dari soal asli atau wacana pendukung di PDF...",
+    "questionText": "Teks pertanyaan kompleks asli yang disalin persis...",
+    "options": ["A. Opsi A", "B. Opsi B", "C. Opsi C", "D. Opsi D"],
+    "correctAnswer": ["A. Opsi A", "C. Opsi C"],
     "points": 35
   },
   {
     "id": "gen_pdf_3",
     "type": "isian_singkat",
-    "stimulus": "Kutipan ringkasan definisi teoretis langsung dari dokumen terlampir...",
-    "questionText": "Pertanyaan spesifik mengenai fakta atau istilah penting yang rumpang...",
-    "correctAnswer": "kata_jawaban",
+    "stimulus": "Kutipan stimulus dari soal asli atau wacana pendukung di PDF...",
+    "questionText": "Teks pertanyaan isian singkat asli...",
+    "correctAnswer": "kata_jawaban_singkat",
     "points": 35
   }
 ]`;
