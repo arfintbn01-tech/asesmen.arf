@@ -633,6 +633,9 @@ function ActiveSubjectQuestionsPreview({ subject, refreshEvent, onQuestionsChang
 export default function App() {
   // Navigation role state
   const [activeRole, setActiveRole] = useState<"siswa" | "pengawas">("siswa");
+  
+  // Forward declaration to bypass hoisting constraints
+  let generateOfflineQuestions: any;
 
   // Global Dashboard Statuses (Shared via polling)
   const [token, setToken] = useState(() => localStorage.getItem("anbk_exam_token") || "ANBK99");
@@ -810,6 +813,9 @@ export default function App() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfGenMessage, setPdfGenMessage] = useState("");
   const [aiQuestionCount, setAiQuestionCount] = useState<number>(3);
+  const [clientGeminiApiKey, setClientGeminiApiKey] = useState(() => {
+    return localStorage.getItem("anbk_client_gemini_key") || "";
+  });
 
   // Classroom Filters
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>("Semua Kelas");
@@ -2225,29 +2231,180 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
   const handleAiQuestionGenerate = async () => {
     setIsGeneratingQuestions(true);
     setAiGenMessage("");
-    try {
-      const res = await fetch("/api/generate-questions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          subject: subjectToGenerate, 
-          kelas: generatorTargetKelas,
-          count: aiQuestionCount 
-        }),
-      });
+    let serverSuccess = false;
+    
+    // First try server API if not on GitHub Pages and key is not forced
+    if (!window.location.hostname.includes("github.io")) {
+      try {
+        const res = await fetch("/api/generate-questions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            subject: subjectToGenerate, 
+            kelas: generatorTargetKelas,
+            count: aiQuestionCount 
+          }),
+        });
 
-      const data = await res.json();
-      if (res.ok) {
-        setAiGenMessage(`✅ Sukses! ${data.message}`);
-        await syncLocalAndServerData();
-      } else {
-        setAiGenMessage(`❌ Error: ${data.error}`);
+        if (res.ok) {
+          const data = await res.json();
+          setAiGenMessage(`✅ Sukses! ${data.message}`);
+          await syncLocalAndServerData();
+          serverSuccess = true;
+        }
+      } catch (err: any) {
+        console.warn("Server API error, falling back to client-side direct Gemini call or legacy offline generator:", err.message);
       }
-    } catch (err: any) {
-      setAiGenMessage(`❌ Gagal menghubungi server: ${err.message}`);
-    } finally {
-      setIsGeneratingQuestions(false);
     }
+
+    if (!serverSuccess) {
+      const activeApiKey = clientGeminiApiKey.trim() || localStorage.getItem("anbk_client_gemini_key") || "";
+      
+      if (activeApiKey) {
+        setAiGenMessage("⌛ Menghubungi Google Gemini API secara langsung (Mode Online GitHub Pages)...");
+        try {
+          const promptText = `Anda adalah penyusun materi instrumen ujian nasional ANBK (Asesmen Nasional Berbasis Komputer) Kemendikbud-Ristek yang berspesialisasi dalam metode AKM (Asesmen Kompetensi Minimum).
+Tolong buatkan TEPAT ${aiQuestionCount} butir soal berkualitas tinggi dengan mata pelajaran: "${subjectToGenerate}".
+Tiap soal harus mengukur tingkat literasi mendalam atau numerasi analitis.
+
+Persyaratan format:
+- Jumlah total soal yang dihasilkan HARUS TEPAT ${aiQuestionCount} butir.
+- Setiap soal harus menyertakan **STIMULUS**. Stimulus berupa cerita pendek, bacaan berita, data kasus, skenario, atau fakta ilmiah mendalam (minimal 3 kalimat yang berisi informasi detail/konteks).
+- Variasikan tipe soal secara berkala/seimbang di antara tiga tipe berikut:
+  1. "pilihan_ganda" (MCQ dengan 4 opsi A, B, C, D dan satu string correctAnswer berupa teks opsi lengkap yang dipilih, misal "A. ...").
+  2. "pilihan_ganda_kompleks" (Siswa dapat memilih lebih dari satu jawaban benar. Sediakan 4 opsi, dan correctAnswer berupa array berisi teks opsi-opsi yang benar, misal ["A. ...", "C. ..."]).
+  3. "isian_singkat" (Isian kata pendek yang ringkas, sertakan correctAnswer berupa string jawaban ringkasnya).
+
+Format respons harus berupa JSON ARRAY dengan tepat ${aiQuestionCount} objek di dalamnya. Setiap objek harus memiliki properti persis seperti berikut (jangan sertakan teks pengantar apa-apa di luar JSON, langsung cetak array raw JSON):
+[
+  {
+    "id": "gen_${Math.random().toString(36).substr(2, 5)}",
+    "type": "pilihan_ganda",
+    "stimulus": "Teks stimulus cerita atau artikel...",
+    "questionText": "Teks pertanyaan yang diajukan konstruktif...",
+    "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+    "correctAnswer": "A. ...",
+    "points": 30
+  }
+]`;
+
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeApiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: promptText }] }],
+              generationConfig: {
+                responseMimeType: "application/json",
+                temperature: 0.7
+              }
+            })
+          });
+
+          if (!response.ok) {
+            const errJson = await response.json().catch(() => ({}));
+            throw new Error(errJson?.error?.message || `HTTP ${response.status}`);
+          }
+
+          const rawData = await response.json();
+          const responseText = rawData?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!responseText) {
+            throw new Error("Respons dari Gemini API kosong.");
+          }
+
+          const jsonStart = responseText.indexOf("[");
+          const jsonEnd = responseText.lastIndexOf("]");
+          let generatedList: any[] = [];
+          if (jsonStart !== -1 && jsonEnd !== -1) {
+            generatedList = JSON.parse(responseText.slice(jsonStart, jsonEnd + 1));
+          } else {
+            generatedList = JSON.parse(responseText.trim());
+          }
+
+          if (Array.isArray(generatedList)) {
+            // Save to local storage
+            const localQuestionsRaw = localStorage.getItem("anbk_questions_map") || "{}";
+            let localQuestions: any = {};
+            try {
+              localQuestions = JSON.parse(localQuestionsRaw);
+            } catch (_) {}
+            if (typeof localQuestions !== "object" || localQuestions === null) {
+              localQuestions = {};
+            }
+            if (!localQuestions[subjectToGenerate]) {
+              localQuestions[subjectToGenerate] = [];
+            }
+            
+            const prepared = generatedList.map((q: any, idx: number) => ({
+              ...q,
+              id: q.id || `gen_online_${Date.now()}_${idx}`,
+              kelas: q.kelas || generatorTargetKelas
+            }));
+
+            localQuestions[subjectToGenerate].push(...prepared);
+            localStorage.setItem("anbk_questions_map", JSON.stringify(localQuestions));
+
+            // Sync subject list
+            const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+            let localSubjectsList: string[] = [];
+            if (localSubjectsRaw) {
+              try { localSubjectsList = JSON.parse(localSubjectsRaw); } catch (_) {}
+            }
+            if (!Array.isArray(localSubjectsList)) { localSubjectsList = []; }
+            if (!localSubjectsList.includes(subjectToGenerate)) {
+              localSubjectsList.push(subjectToGenerate);
+              localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjectsList));
+            }
+            setSubjectsList(localSubjectsList);
+
+            setAiGenMessage(`✅ Sukses (Gemini Direct Online): Berhasil men-generate ${prepared.length} butir soal baru secara langsung dari Google Gemini API!`);
+            await syncLocalAndServerData();
+          } else {
+            throw new Error("Data yang dikembalikan bukan berbentuk JSON array.");
+          }
+        } catch (ex: any) {
+          setAiGenMessage(`❌ Error Gemini API: ${ex.message}`);
+        }
+      } else {
+        // Fallback to legacy offline dummy generator
+        const count = parseInt(String(aiQuestionCount), 10) || 3;
+        setAiGenMessage("⌛ Menjalankan generator luring aman...");
+        
+        // Use traditional offline builder
+        const generated = generateOfflineQuestions(
+          "Generasi Otomatis",
+          subjectToGenerate,
+          count,
+          generatorTargetKelas,
+          ""
+        );
+
+        const localQuestionsRaw = localStorage.getItem("anbk_questions_map") || "{}";
+        let localQuestions: any = {};
+        try { localQuestions = JSON.parse(localQuestionsRaw); } catch (_) {}
+        if (!localQuestions[subjectToGenerate]) {
+          localQuestions[subjectToGenerate] = [];
+        }
+        localQuestions[subjectToGenerate].push(...generated);
+        localStorage.setItem("anbk_questions_map", JSON.stringify(localQuestions));
+
+        // Sync subject list
+        const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+        let localSubjectsList: string[] = [];
+        if (localSubjectsRaw) {
+          try { localSubjectsList = JSON.parse(localSubjectsRaw); } catch (_) {}
+        }
+        if (!Array.isArray(localSubjectsList)) { localSubjectsList = []; }
+        if (!localSubjectsList.includes(subjectToGenerate)) {
+          localSubjectsList.push(subjectToGenerate);
+          localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjectsList));
+        }
+        setSubjectsList(localSubjectsList);
+
+        setAiGenMessage(`✅ Sukses (Mode Offline/GitHub Pages): Berhasil men-generate ${count} butir soal simulasi lokal secara instan! silakan atur Kunci API Gemini jika ingin menggunakan AI secara real online di GitHub Pages.`);
+      }
+    }
+
+    setIsGeneratingQuestions(false);
   };
 
   // Proctor Actions: Add manual subject
@@ -2842,7 +2999,7 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
     };
 
     // Helper to generate questions locally for offline/GitHub Pages using extracted text
-    const generateOfflineQuestions = (
+    generateOfflineQuestions = (
       filename: string, 
       subject: string, 
       count: number, 
@@ -3238,62 +3395,189 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
           } else {
             // Client-side fallback for GitHub Pages, static sites, Vercel 404
             const count = parseInt(String(aiQuestionCount), 10) || 3;
-            setPdfGenMessage("⌛ Mengekstrak isi dokumen secara lokal...");
-            
-            // Extract the actual parsed text content of the pdf file client side!
-            const textContent = await extractDocumentText(pdfFile);
-            
-            const generated = generateOfflineQuestions(
-              pdfFile.name, 
-              subjectToGenerate, 
-              count, 
-              generatorTargetKelas, 
-              textContent
-            );
+            const activeApiKey = clientGeminiApiKey.trim() || localStorage.getItem("anbk_client_gemini_key") || "";
+            let generatedByClientApi = false;
 
-            // Save inside local storage questions map with deep type safety
-            const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
-            let map: any = {};
-            if (localQuestionsRaw) {
+            if (activeApiKey) {
+              setPdfGenMessage("⌛ Mengekstrak berkas & mengirimkannya langsung ke AI Gemini (Mode Online GitHub)...");
               try {
-                map = JSON.parse(localQuestionsRaw);
-              } catch (_) {}
-            }
-            if (typeof map !== "object" || map === null || Array.isArray(map)) {
-              map = {};
-            }
-            if (!map[subjectToGenerate]) {
-              map[subjectToGenerate] = [];
-            } else if (!Array.isArray(map[subjectToGenerate])) {
-              map[subjectToGenerate] = [];
-            }
-            map[subjectToGenerate].push(...generated);
-            localStorage.setItem("anbk_questions_map", JSON.stringify(map));
+                const promptText = `Anda adalah sistem kecerdasan buatan ahli pengekstraktor dan pemformat instrumen ujian nasional ANBK (Asesmen Nasional Berbasis Komputer).
+Berikut dilampirkan dokumen PDF rujukan yang diunggah oleh pengawas sekolah. Dokumen ini dapat berupa lembar soal asli ataupun materi bacaan.
 
-            // Ensure subject list exists in local storage
-            const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
-            let localSubjectsList: string[] = [];
-            if (localSubjectsRaw) {
-              try {
-                localSubjectsList = JSON.parse(localSubjectsRaw);
-              } catch (_) {}
-            }
-            if (!Array.isArray(localSubjectsList)) {
-              localSubjectsList = [];
-            }
-            if (!localSubjectsList.includes(subjectToGenerate)) {
-              localSubjectsList.push(subjectToGenerate);
-              localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjectsList));
-            }
-            setSubjectsList(localSubjectsList);
+TUGAS UTAMA DAN MANDATORI ANDA:
+1. **EKSTRAK SOAL ASLI**: Carilah soal-soal asli/eksisting yang tertulis di dalam dokumen PDF tersebut. **Ketik/buat soal ujian yang SAMA PERSIS dengan soal yang ada di dalam dokumen PDF tersebut**. Salin stimulus/wacana, teks pertanyaan, pilihan jawaban, dan tentukan kunci jawabannya secara akurat dari soal asli di dokumen. JANGAN mengarang soal baru jika di dokumen PDF sudah ada soal tertulis.
+2. **JANGAN MENGARANG BEBAS**: Prioritaskan 100% untuk mengekstrak dan menyalin secara persis butir soal yang sudah ada di dokumen PDF tersebut.
+3. **Pengecualian**: Jika (dan hanya jika) di dalam isi dokumen PDF tersebut sama sekali tidak ditemukan butir soal tertulis (hanya berisi materi bacaan mentah, buku teks, atau artikel), barulah Anda boleh membuat soal baru berkualitas tinggi yang sesuai dangan isi materi tersebut untuk mata pelajaran: "${subjectToGenerate}".
+4. **Jumlah Soal**: Ekstrak atau buatlah sebanyak TEPAT ${count} butir soal ujian (atau sebanyak soal asli yang ditemukan di dalam dokumen jika jumlahnya memadai).
 
-            setPdfFile(null);
-            if (textContent && textContent.length > 50) {
-              setPdfGenMessage(`✅ Sukses (Mode Offline/GitHub Pages): Berhasil mengekstrak informasi tulisan dari dokumen "${pdfFile.name}"! Sebanyak ${count} butir soal ujian telah dirumuskan berdasarkan data rujukan tekstual asli.`);
-            } else {
-              setPdfGenMessage(`✅ Sukses (Mode Offline/GitHub Pages): Berhasil memproses berkas "${pdfFile.name}" secara adaptif! Sebanyak ${count} butir soal ujian baru telah ditambahkan ke bank soal.`);
+Kriteria Kejelasan & Keselarasan Soal:
+1. **Sangat Spesifik & Relevan**: Salin stimulus/wacana secara akurat minimal 3 kalimat dari materi atau dokumen rujukan agar siswa memiliki konteks yang utuh untuk menjawab.
+2. **Kualitas Bahasa**: Gunakan Bahasa Indonesia ragam baku, formal, jernih, dan sesuai dengan Ejaan Yang Disempurnakan (EYD). Kalimat pertanyaan tidak boleh diubah jika menyalin dari soal asli.
+3. **Pilihan Jawaban**:
+   - Untuk "pilihan_ganda": Sediakan atau salin 4 pilihan (A, B, C, D). Teks pilihan harus rapi dan realistis. Tentukan salah satu sebagai kunci jawaban di "correctAnswer".
+   - Untuk "pilihan_ganda_kompleks": Sediakan atau salin pilihan yang ada. Berikan minimal dua jawaban yang benar sebagai kunci jawaban (correctAnswer berupa array string).
+   - Untuk "isian_singkat": Pastikan pertanyaannya memerlukan jawaban berupa satu kata atau angka pendek.
+
+Format respons wajib berupa RAW JSON ARRAY (tanpa pembungkus markdown, tanpa teks pembuka/penutup, langsung cetak array JSON):
+[
+  {
+    "id": "gen_pdf_${Math.random().toString(36).substr(2, 5)}",
+    "type": "pilihan_ganda",
+    "stimulus": "Kutipan teks penunjang/stimulus dari soal asli di PDF...",
+    "questionText": "Teks pertanyaan asli yang disalin persis dari PDF...",
+    "options": ["A. Opsi A", "B. Opsi B", "C. Opsi C", "D. Opsi D"],
+    "correctAnswer": "A. Opsi A",
+    "points": 30
+  }
+]`;
+
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeApiKey}`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    contents: [
+                      {
+                        parts: [
+                          { text: promptText },
+                          {
+                            inlineData: {
+                              mimeType: pdfFile.type || "application/pdf",
+                              data: base64Content
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    generationConfig: {
+                      responseMimeType: "application/json",
+                      temperature: 0.2
+                    }
+                  })
+                });
+
+                if (!response.ok) {
+                  const errJson = await response.json().catch(() => ({}));
+                  throw new Error(errJson?.error?.message || `HTTP ${response.status}`);
+                }
+
+                const rawData = await response.json();
+                const responseText = rawData?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!responseText) {
+                  throw new Error("Respons dari Gemini API kosong.");
+                }
+
+                const jsonStart = responseText.indexOf("[");
+                const jsonEnd = responseText.lastIndexOf("]");
+                let generatedList: any[] = [];
+                if (jsonStart !== -1 && jsonEnd !== -1) {
+                  generatedList = JSON.parse(responseText.slice(jsonStart, jsonEnd + 1));
+                } else {
+                  generatedList = JSON.parse(responseText.trim());
+                }
+
+                if (Array.isArray(generatedList)) {
+                  const localQuestionsRaw = localStorage.getItem("anbk_questions_map") || "{}";
+                  let localQuestions: any = {};
+                  try { localQuestions = JSON.parse(localQuestionsRaw); } catch (_) {}
+                  if (typeof localQuestions !== "object" || localQuestions === null) { localQuestions = {}; }
+                  if (!localQuestions[subjectToGenerate]) {
+                    localQuestions[subjectToGenerate] = [];
+                  }
+
+                  const prepared = generatedList.map((q: any, idx: number) => ({
+                    ...q,
+                    id: q.id || `gen_pdf_online_${Date.now()}_${idx}`,
+                    kelas: q.kelas || generatorTargetKelas
+                  }));
+
+                  localQuestions[subjectToGenerate].push(...prepared);
+                  localStorage.setItem("anbk_questions_map", JSON.stringify(localQuestions));
+
+                  // Ensure subject list exists in local storage
+                  const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+                  let localSubjectsList: string[] = [];
+                  if (localSubjectsRaw) {
+                    try { localSubjectsList = JSON.parse(localSubjectsRaw); } catch (_) {}
+                  }
+                  if (!Array.isArray(localSubjectsList)) { localSubjectsList = []; }
+                  if (!localSubjectsList.includes(subjectToGenerate)) {
+                    localSubjectsList.push(subjectToGenerate);
+                    localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjectsList));
+                  }
+                  setSubjectsList(localSubjectsList);
+
+                  setPdfFile(null);
+                  setPdfGenMessage(`✅ Sukses (Gemini Direct Online): Berhasil mengekstrak ${prepared.length} butir instrumen soal asli secara langsung dari berkas "${pdfFile.name}" melalui Gemini API daring!`);
+                  await syncLocalAndServerData();
+                  generatedByClientApi = true;
+                  setIsGeneratingPdf(false);
+                } else {
+                  throw new Error("Format fungsional data respons tidak sesuai (bukan JSON array).");
+                }
+              } catch (ex: any) {
+                console.error("Gagal online Gemini extraction client-side:", ex);
+                setPdfGenMessage(`⚠️ Gagal ekstraksi daring via Gemini: ${ex.message}. Sistem akan otomatis menggunakan pembuat lokal offline aman.`);
+              }
             }
-            setIsGeneratingPdf(false);
+
+            if (!generatedByClientApi) {
+              setPdfGenMessage("⌛ Mengekstrak isi dokumen secara lokal...");
+              
+              // Extract the actual parsed text content of the pdf file client side!
+              const textContent = await extractDocumentText(pdfFile);
+              
+              const generated = generateOfflineQuestions(
+                pdfFile.name, 
+                subjectToGenerate, 
+                count, 
+                generatorTargetKelas, 
+                textContent
+              );
+
+              // Save inside local storage questions map with deep type safety
+              const localQuestionsRaw = localStorage.getItem("anbk_questions_map");
+              let map: any = {};
+              if (localQuestionsRaw) {
+                try {
+                  map = JSON.parse(localQuestionsRaw);
+                } catch (_) {}
+              }
+              if (typeof map !== "object" || map === null || Array.isArray(map)) {
+                map = {};
+              }
+              if (!map[subjectToGenerate]) {
+                map[subjectToGenerate] = [];
+              } else if (!Array.isArray(map[subjectToGenerate])) {
+                map[subjectToGenerate] = [];
+              }
+              map[subjectToGenerate].push(...generated);
+              localStorage.setItem("anbk_questions_map", JSON.stringify(map));
+
+              // Ensure subject list exists in local storage
+              const localSubjectsRaw = localStorage.getItem("anbk_subjects_list");
+              let localSubjectsList: string[] = [];
+              if (localSubjectsRaw) {
+                try {
+                  localSubjectsList = JSON.parse(localSubjectsRaw);
+                } catch (_) {}
+              }
+              if (!Array.isArray(localSubjectsList)) {
+                localSubjectsList = [];
+              }
+              if (!localSubjectsList.includes(subjectToGenerate)) {
+                localSubjectsList.push(subjectToGenerate);
+                localStorage.setItem("anbk_subjects_list", JSON.stringify(localSubjectsList));
+              }
+              setSubjectsList(localSubjectsList);
+
+              setPdfFile(null);
+              if (textContent && textContent.length > 50) {
+                setPdfGenMessage(`✅ Sukses (Mode Offline/GitHub Pages): Berhasil mengekstrak informasi tulisan dari dokumen "${pdfFile.name}"! Sebanyak ${count} butir soal ujian telah dirumuskan berdasarkan data rujukan tekstual asli.`);
+              } else {
+                setPdfGenMessage(`✅ Sukses (Mode Offline/GitHub Pages): Berhasil memproses berkas "${pdfFile.name}" secara adaptif! Sebanyak ${count} butir soal ujian baru telah ditambahkan ke bank soal. Atur Kunci API Gemini jika ingin menggunakan AI secara real online di GitHub Pages.`);
+              }
+              setIsGeneratingPdf(false);
+            }
           }
         } catch (err: any) {
           console.error("Kesalahan ketika memproses dokumen di dalam onload:", err);
@@ -5167,6 +5451,43 @@ ${currentSiswa.trustScore < 50 ? "1. Lakukan ujian lisan susulan.\\n2. Hubungi o
                 </div>
 
                 {/* Inline Add Subject Form removed */}
+              </div>
+
+              {/* CONFIGURATION MODE: GEMINI CLIENT API KEY FOR ONLINE OPERATION ON GITHUB PAGES */}
+              <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-xl p-3.5 border border-indigo-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-inner">
+                <div className="text-left space-y-0.5">
+                  <div className="flex items-center gap-1.5 border-b border-indigo-900 pb-1 mb-1">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                    <span className="text-[10px] font-black uppercase text-indigo-300 tracking-wider">Koneksi Online GitHub (Kunci API Gemini)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 max-w-md leading-relaxed font-semibold">
+                    Masukkan Kunci API Gemini Anda di sini untuk mengaktifkan AI secara real-time dan mengatasi batasan offline di hosting GitHub Pages statis!
+                  </p>
+                </div>
+                <div className="w-full sm:w-auto flex items-center gap-1.5 shrink-0">
+                  <input
+                    type="password"
+                    value={clientGeminiApiKey}
+                    onChange={(e) => {
+                      setClientGeminiApiKey(e.target.value);
+                      localStorage.setItem("anbk_client_gemini_key", e.target.value);
+                    }}
+                    placeholder="Masukkan API Key Anda..."
+                    className="w-full sm:w-56 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-lg text-slate-100 text-xs font-mono py-1.5 px-3 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition shadow-sm"
+                  />
+                  {clientGeminiApiKey && (
+                    <button
+                      onClick={() => {
+                        setClientGeminiApiKey("");
+                        localStorage.removeItem("anbk_client_gemini_key");
+                        alert("Kunci API Gemini lokal dihapus!");
+                      }}
+                      className="py-1 px-3 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black rounded-lg transition shrink-0 uppercase"
+                    >
+                      Hapus
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Subject Selector and Mode Tab Controls */}
